@@ -350,6 +350,7 @@ def get_stock_comparison_data_listed(ticker, company_name, financials, num_years
     """
     try:
         import streamlit as st
+        import yfinance as yf
         num_years = min(num_years, 4)
         
         # Fetch stock prices
@@ -367,23 +368,35 @@ def get_stock_comparison_data_listed(ticker, company_name, financials, num_years
                 'Revenue_Cr': revenues
             })
         
-        # Extract EPS from financials - CHECK ALL KEYS
+        # Fetch EPS DIRECTLY from Yahoo Finance
         eps_df = None
-        st.write("🔍 FINANCIALS KEYS:", list(financials.keys()))
-        
-        if 'years' in financials and 'net_income' in financials and 'shares_outstanding' in financials:
-            years = financials['years'][-num_years:]
-            net_incomes = financials['net_income'][-num_years:]
-            shares = financials['shares_outstanding'][-num_years:]
+        try:
+            stock = yf.Ticker(ticker)
+            # Get financials which includes EPS data
+            financials_yf = stock.financials
             
-            eps_values = [(ni * 10000000) / sh if sh > 0 else 0 for ni, sh in zip(net_incomes, shares)]
-            eps_df = pd.DataFrame({
-                'Year': years,
-                'EPS': eps_values
-            })
-            st.success(f"✅ EPS calculated: {eps_values}")
-        else:
-            st.error(f"❌ Missing keys for EPS: years={('years' in financials)}, net_income={('net_income' in financials)}, shares={('shares_outstanding' in financials)}")
+            if financials_yf is not None and not financials_yf.empty:
+                # Try to get EPS from info first (easier)
+                info = stock.info
+                
+                # Get historical EPS from quarterly/annual earnings
+                earnings = stock.earnings
+                if earnings is not None and not earnings.empty and 'Earnings' in earnings.columns:
+                    # earnings has Year index and Earnings column
+                    eps_data = earnings[['Earnings']].copy()
+                    eps_data = eps_data.reset_index()
+                    eps_data.columns = ['Year', 'EPS']
+                    
+                    # Filter to last num_years
+                    eps_data = eps_data.tail(num_years)
+                    eps_df = eps_data
+                    st.success(f"✅ Fetched EPS from Yahoo Finance: {len(eps_df)} years")
+                else:
+                    st.warning("⚠️ Could not fetch EPS from Yahoo Finance earnings data")
+            else:
+                st.warning("⚠️ Yahoo Finance financials data not available")
+        except Exception as e:
+            st.error(f"❌ Error fetching EPS from Yahoo Finance: {str(e)}")
         
         # Create chart
         chart_fig = None
