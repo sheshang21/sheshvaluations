@@ -208,7 +208,7 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
         specs=[[{"secondary_y": True}]]
     )
     
-    # Add Revenue as bars (primary y-axis)
+    # Add Revenue as bars (secondary y-axis - so it doesn't interfere with stock/EPS)
     if revenue_df is not None and not revenue_df.empty:
         fig.add_trace(
             go.Bar(
@@ -217,12 +217,27 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                 name='Revenue (₹ Cr)',
                 marker_color='lightblue',
                 opacity=0.6,
+                yaxis='y2'
+            ),
+            secondary_y=True
+        )
+    
+    # Add EPS as line (primary y-axis)
+    if eps_df is not None and not eps_df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=eps_df['Year'],
+                y=eps_df['EPS'],
+                name='EPS (₹)',
+                line=dict(color='orange', width=3, dash='dash'),
+                mode='lines+markers',
+                marker=dict(size=10),
                 yaxis='y'
             ),
             secondary_y=False
         )
     
-    # Add Stock Price as line (secondary y-axis)
+    # Add Stock Price as line (primary y-axis with EPS)
     if stock_prices_df is not None and not stock_prices_df.empty:
         # Identify major changes
         major_changes = stock_prices_df[stock_prices_df['is_major'] == True] if 'is_major' in stock_prices_df.columns else pd.DataFrame()
@@ -235,9 +250,9 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                 name='Stock Price (₹)',
                 line=dict(color='green', width=2),
                 mode='lines',
-                yaxis='y2'
+                yaxis='y'
             ),
-            secondary_y=True
+            secondary_y=False
         )
         
         # Highlight major changes
@@ -254,27 +269,12 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                         symbol='circle',
                         line=dict(color='darkred', width=1)
                     ),
-                    yaxis='y2',
+                    yaxis='y',
                     hovertemplate='<b>%{x}</b><br>Price: ₹%{y:.2f}<br>Change: %{customdata:.2f}%<extra></extra>',
                     customdata=major_changes['pct_change']
                 ),
-                secondary_y=True
+                secondary_y=False
             )
-    
-    # Add EPS as line (primary y-axis with revenue)
-    if eps_df is not None and not eps_df.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=eps_df['Year'],
-                y=eps_df['EPS'],
-                name='EPS (₹)',
-                line=dict(color='orange', width=2, dash='dash'),
-                mode='lines+markers',
-                marker=dict(size=8),
-                yaxis='y'
-            ),
-            secondary_y=False
-        )
     
     # Update layout
     fig.update_layout(
@@ -284,7 +284,6 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
         ),
         xaxis_title="Time Period",
         height=600,
-        width=1200,
         hovermode='x unified',
         legend=dict(
             orientation="h",
@@ -299,13 +298,13 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
     
     # Update y-axes
     fig.update_yaxes(
-        title_text="Revenue (₹ Cr) / EPS (₹)",
+        title_text="Stock Price (₹) / EPS (₹)",
         secondary_y=False,
         gridcolor='lightgray'
     )
     
     fig.update_yaxes(
-        title_text="Stock Price (₹)",
+        title_text="Revenue (₹ Cr)",
         secondary_y=True,
         gridcolor='lightgray'
     )
@@ -350,10 +349,12 @@ def get_stock_comparison_data_listed(ticker, company_name, financials, num_years
         eps_df = None
         if 'years' in financials and 'net_income' in financials and 'shares_outstanding' in financials:
             years = financials['years'][-num_years:]
-            net_incomes = financials['net_income'][-num_years:]
-            shares = financials['shares_outstanding'][-num_years:]
+            net_incomes = financials['net_income'][-num_years:]  # Usually in Crores or Millions
+            shares = financials['shares_outstanding'][-num_years:]  # Actual count
             
-            eps_values = [ni / sh if sh > 0 else 0 for ni, sh in zip(net_incomes, shares)]
+            # Convert to EPS: (Net Income * 10^7) / Shares = EPS in rupees
+            # If net income is in Crores, multiply by 10000000 to get actual rupees
+            eps_values = [(ni * 10000000) / sh if sh > 0 else 0 for ni, sh in zip(net_incomes, shares)]
             eps_df = pd.DataFrame({
                 'Year': years,
                 'EPS': eps_values

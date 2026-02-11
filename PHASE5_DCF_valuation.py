@@ -5168,11 +5168,6 @@ def calculate_dcf_valuation(projections, wacc_details, terminal_growth, num_shar
 def main():
     """Main DCF UI function - can be called from dashboard or run standalone"""
     
-    # CHECK STOCK COMPARISON MODULE STATUS IMMEDIATELY
-    st.sidebar.write(f"🔍 STOCK_COMPARISON_AVAILABLE: {STOCK_COMPARISON_AVAILABLE}")
-    if not STOCK_COMPARISON_AVAILABLE:
-        st.sidebar.error(f"Stock comparison import failed: {STOCK_COMPARISON_ERROR}")
-    
     # Initialize session state for peer auto-fetch (Screener mode)
     if 'nse_peers_input' not in st.session_state:
         st.session_state.nse_peers_input = ''
@@ -5880,12 +5875,6 @@ def main():
                     st.rerun()
         
             if st.session_state.get('show_results_listed', False):
-                st.success("✅ RESULTS SECTION STARTED")
-                
-                # Show checkbox state immediately
-                checkbox_val = st.session_state.get('enable_stock_comparison_listed', False)
-                st.info(f"🔍 Stock Comparison Checkbox Value: {checkbox_val}")
-                
                 # Determine data source based on checkbox
                 use_screener = st.session_state.get('use_screener_data', False)
             
@@ -6240,23 +6229,16 @@ def main():
                         "🔄 Relative Valuation"
                     ]
                 
-                    # Add Stock Comparison tab if enabled - DEBUG
+                    # Add Stock Comparison tab if enabled
                     stock_comp_data = None
                     enable_stock_comparison_state = st.session_state.get('enable_stock_comparison_listed', False)
                     
-                    # DEBUG - remove after testing
-                    st.write(f"DEBUG: enable_stock_comparison_state = {enable_stock_comparison_state}")
-                    st.write(f"DEBUG: STOCK_COMPARISON_AVAILABLE = {STOCK_COMPARISON_AVAILABLE}")
-                    
                     if enable_stock_comparison_state and STOCK_COMPARISON_AVAILABLE:
                         tabs_list.append("📈 Stock vs Financials")
-                        st.write("DEBUG: Added Stock vs Financials tab")
                 
                     # Add Bank DCF tab if calculated
                     if bank_dcf_result:
                         tabs_list.append("🏦 Bank DCF")
-                    
-                    st.write(f"DEBUG: Final tabs_list = {tabs_list}")
                     
                     # Create tabs dynamically
                     tabs = st.tabs(tabs_list)
