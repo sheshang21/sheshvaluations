@@ -381,18 +381,38 @@ def get_stock_comparison_data_listed(ticker, company_name, financials, num_years
         
         # Extract EPS from financials
         eps_df = None
+        st.write("DEBUG EPS EXTRACTION:")
+        st.write(f"'years' in financials: {'years' in financials}")
+        st.write(f"'net_income' in financials: {'net_income' in financials}")
+        st.write(f"'shares_outstanding' in financials: {'shares_outstanding' in financials}")
+        
+        if 'years' in financials:
+            st.write(f"Years: {financials['years']}")
+        if 'net_income' in financials:
+            st.write(f"Net income: {financials['net_income']}")
+        if 'shares_outstanding' in financials:
+            st.write(f"Shares: {financials['shares_outstanding']}")
+        
         if 'years' in financials and 'net_income' in financials and 'shares_outstanding' in financials:
             years = financials['years'][-num_years:]
             net_incomes = financials['net_income'][-num_years:]  # Usually in Crores or Millions
             shares = financials['shares_outstanding'][-num_years:]  # Actual count
             
+            st.write(f"Calculating EPS with {len(years)} years")
+            st.write(f"Net incomes: {net_incomes}")
+            st.write(f"Shares: {shares}")
+            
             # Convert to EPS: (Net Income * 10^7) / Shares = EPS in rupees
             # If net income is in Crores, multiply by 10000000 to get actual rupees
             eps_values = [(ni * 10000000) / sh if sh > 0 else 0 for ni, sh in zip(net_incomes, shares)]
+            st.write(f"Calculated EPS values: {eps_values}")
+            
             eps_df = pd.DataFrame({
                 'Year': years,
                 'EPS': eps_values
             })
+            st.write("EPS DataFrame created:")
+            st.write(eps_df)
         
         # Create chart
         chart_fig = None
