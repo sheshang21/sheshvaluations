@@ -284,22 +284,28 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
             gridcolor='lightgray'
         ),
         yaxis=dict(
-            title="Revenue (₹ Cr)",
-            titlefont=dict(color='#1f77b4'),
+            title=dict(
+                text="Revenue (₹ Cr)",
+                font=dict(color='#1f77b4')
+            ),
             tickfont=dict(color='#1f77b4'),
             side='left'
         ),
         yaxis2=dict(
-            title="Stock Price (₹)",
-            titlefont=dict(color='#2ca02c'),
+            title=dict(
+                text="Stock Price (₹)",
+                font=dict(color='#2ca02c')
+            ),
             tickfont=dict(color='#2ca02c'),
             anchor='x',
             overlaying='y',
             side='right'
         ),
         yaxis3=dict(
-            title="EPS (₹)",
-            titlefont=dict(color='#ff7f0e'),
+            title=dict(
+                text="EPS (₹)",
+                font=dict(color='#ff7f0e')
+            ),
             tickfont=dict(color='#ff7f0e'),
             anchor='free',
             overlaying='y',
