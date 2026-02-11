@@ -5347,14 +5347,6 @@ def main():
                     help="Years to project into future"
                 )
         
-            # Stock Price Comparison Feature Toggle
-            st.markdown("**📈 Stock Price Analysis**")
-            enable_stock_comparison = st.checkbox(
-                "Show Stock Price vs Revenue & EPS Comparison",
-                value=False,
-                help="Display chart comparing stock price movements with revenue and EPS trends (Yahoo Finance data limited to 4 years)"
-            )
-        
             st.markdown("---")
             st.markdown("**📊 Peer Companies (Both Exchanges)**")
         
@@ -5861,6 +5853,13 @@ def main():
                     st.info("📌 Peer comparison data will be fetched from Screener.in")
         
             st.markdown("---")
+            
+            # Stock Price Comparison Feature Toggle - compact, before fetch button
+            enable_stock_comparison = st.checkbox(
+                "📈 Show Stock Price vs Revenue & EPS chart",
+                value=False,
+                help="Compare stock price with financials (max 4 years)"
+            )
         
             col_fetch1, col_fetch2 = st.columns([3, 1])
         
@@ -8840,15 +8839,6 @@ def main():
                     key='screener_proj_years',
                     help="Number of years to project into the future"
                 )
-            
-            # Stock Price Comparison Feature Toggle
-            st.markdown("**📈 Stock Price Analysis**")
-            enable_stock_comparison_screener = st.checkbox(
-                "Show Stock Price vs Revenue & EPS Comparison",
-                value=False,
-                key='screener_stock_comparison',
-                help="Display chart comparing stock price movements with revenue and EPS trends (based on selected historical years, max 10 years)"
-            )
         
         with col2:
             tax_rate_screener = st.number_input(
@@ -9057,6 +9047,14 @@ def main():
         
         # Run valuation button
         if excel_file_screener and company_name_screener:
+            # Stock Price Comparison Feature Toggle - compact, before run button
+            enable_stock_comparison_screener = st.checkbox(
+                "📈 Show Stock Price vs Revenue & EPS chart",
+                value=False,
+                key='screener_stock_comparison',
+                help="Compare stock price with financials (max 10 years)"
+            )
+            
             if st.button("🚀 Run Screener Mode Valuation", type="primary", key="run_screener_dcf_btn"):
                 st.session_state.show_results_screener = True
             
