@@ -6229,15 +6229,23 @@ def main():
                         "🔄 Relative Valuation"
                     ]
                 
-                    # Add Stock Comparison tab if enabled
+                    # Add Stock Comparison tab if enabled - DEBUG
                     stock_comp_data = None
                     enable_stock_comparison_state = st.session_state.get('enable_stock_comparison_listed', False)
+                    
+                    # DEBUG - remove after testing
+                    st.write(f"DEBUG: enable_stock_comparison_state = {enable_stock_comparison_state}")
+                    st.write(f"DEBUG: STOCK_COMPARISON_AVAILABLE = {STOCK_COMPARISON_AVAILABLE}")
+                    
                     if enable_stock_comparison_state and STOCK_COMPARISON_AVAILABLE:
                         tabs_list.append("📈 Stock vs Financials")
+                        st.write("DEBUG: Added Stock vs Financials tab")
                 
                     # Add Bank DCF tab if calculated
                     if bank_dcf_result:
                         tabs_list.append("🏦 Bank DCF")
+                    
+                    st.write(f"DEBUG: Final tabs_list = {tabs_list}")
                     
                     # Create tabs dynamically
                     tabs = st.tabs(tabs_list)
