@@ -317,7 +317,7 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
             side='right',
             position=0.95
         ),
-        height=600,
+        height=500,
         hovermode='x unified',
         legend=dict(
             orientation="h",
@@ -349,6 +349,7 @@ def get_stock_comparison_data_listed(ticker, company_name, financials, num_years
         dict with stock_prices_df, revenue_df, eps_df, chart_fig
     """
     try:
+        import streamlit as st
         num_years = min(num_years, 4)
         
         # Fetch stock prices
@@ -366,20 +367,23 @@ def get_stock_comparison_data_listed(ticker, company_name, financials, num_years
                 'Revenue_Cr': revenues
             })
         
-        # Extract EPS from financials
+        # Extract EPS from financials - CHECK ALL KEYS
         eps_df = None
+        st.write("🔍 FINANCIALS KEYS:", list(financials.keys()))
+        
         if 'years' in financials and 'net_income' in financials and 'shares_outstanding' in financials:
             years = financials['years'][-num_years:]
-            net_incomes = financials['net_income'][-num_years:]  # Usually in Crores or Millions
-            shares = financials['shares_outstanding'][-num_years:]  # Actual count
+            net_incomes = financials['net_income'][-num_years:]
+            shares = financials['shares_outstanding'][-num_years:]
             
-            # Convert to EPS: (Net Income * 10^7) / Shares = EPS in rupees
-            # If net income is in Crores, multiply by 10000000 to get actual rupees
             eps_values = [(ni * 10000000) / sh if sh > 0 else 0 for ni, sh in zip(net_incomes, shares)]
             eps_df = pd.DataFrame({
                 'Year': years,
                 'EPS': eps_values
             })
+            st.success(f"✅ EPS calculated: {eps_values}")
+        else:
+            st.error(f"❌ Missing keys for EPS: years={('years' in financials)}, net_income={('net_income' in financials)}, shares={('shares_outstanding' in financials)}")
         
         # Create chart
         chart_fig = None
