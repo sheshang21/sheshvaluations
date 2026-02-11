@@ -5875,6 +5875,12 @@ def main():
                     st.rerun()
         
             if st.session_state.get('show_results_listed', False):
+                st.success("✅ RESULTS SECTION STARTED")
+                
+                # Show checkbox state immediately
+                checkbox_val = st.session_state.get('enable_stock_comparison_listed', False)
+                st.info(f"🔍 Stock Comparison Checkbox Value: {checkbox_val}")
+                
                 # Determine data source based on checkbox
                 use_screener = st.session_state.get('use_screener_data', False)
             
