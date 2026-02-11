@@ -205,6 +205,24 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
     
     from plotly.subplots import make_subplots
     import plotly.graph_objects as go
+    import streamlit as st
+    
+    # DEBUG - Check what data we have
+    st.write("DEBUG DATA CHECK:")
+    st.write(f"Revenue data: {revenue_df is not None and not revenue_df.empty}")
+    if revenue_df is not None and not revenue_df.empty:
+        st.write(f"Revenue shape: {revenue_df.shape}")
+        st.write(revenue_df)
+    
+    st.write(f"Stock price data: {stock_prices_df is not None and not stock_prices_df.empty}")
+    if stock_prices_df is not None and not stock_prices_df.empty:
+        st.write(f"Stock price shape: {stock_prices_df.shape}")
+        st.write(f"Price range: {stock_prices_df['Close'].min():.2f} - {stock_prices_df['Close'].max():.2f}")
+    
+    st.write(f"EPS data: {eps_df is not None and not eps_df.empty}")
+    if eps_df is not None and not eps_df.empty:
+        st.write(f"EPS shape: {eps_df.shape}")
+        st.write(eps_df)
     
     # Create figure with multiple y-axes
     fig = go.Figure()
