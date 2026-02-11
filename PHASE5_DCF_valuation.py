@@ -13,6 +13,17 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
+# Stock Price Comparison Module
+try:
+    from stock_price_comparison import (
+        get_stock_comparison_data_listed,
+        get_stock_comparison_data_screener
+    )
+    STOCK_COMPARISON_AVAILABLE = True
+except ImportError as e:
+    STOCK_COMPARISON_AVAILABLE = False
+    STOCK_COMPARISON_ERROR = str(e)
+
 # Screener Excel Mode Module
 try:
     from screener_excel_mode import (
@@ -5336,6 +5347,14 @@ def main():
                     help="Years to project into future"
                 )
         
+            # Stock Price Comparison Feature Toggle
+            st.markdown("**📈 Stock Price Analysis**")
+            enable_stock_comparison = st.checkbox(
+                "Show Stock Price vs Revenue & EPS Comparison",
+                value=False,
+                help="Display chart comparing stock price movements with revenue and EPS trends (Yahoo Finance data limited to 4 years)"
+            )
+        
             st.markdown("---")
             st.markdown("**📊 Peer Companies (Both Exchanges)**")
         
@@ -6210,12 +6229,26 @@ def main():
                         "🔄 Relative Valuation"
                     ]
                 
+                    # Add Stock Comparison tab if enabled
+                    stock_comp_data = None
+                    if enable_stock_comparison and STOCK_COMPARISON_AVAILABLE:
+                        tabs_list.append("📈 Stock vs Financials")
+                
                     # Add Bank DCF tab if calculated
                     if bank_dcf_result:
                         tabs_list.append("🏦 Bank DCF")
-                        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(tabs_list)
-                    else:
-                        tab1, tab2, tab3, tab4, tab5 = st.tabs(tabs_list)
+                    
+                    # Create tabs dynamically
+                    tabs = st.tabs(tabs_list)
+                    tab_idx = 0
+                    tab1 = tabs[tab_idx]; tab_idx += 1
+                    tab2 = tabs[tab_idx]; tab_idx += 1
+                    tab3 = tabs[tab_idx]; tab_idx += 1
+                    tab4 = tabs[tab_idx]; tab_idx += 1
+                    tab5 = tabs[tab_idx]; tab_idx += 1
+                    tab_stock = tabs[tab_idx] if enable_stock_comparison and STOCK_COMPARISON_AVAILABLE else None
+                    if tab_stock: tab_idx += 1
+                    tab6 = tabs[tab_idx] if bank_dcf_result else None
                 
                     with tab1:
                         st.subheader("Valuation Summary - All Methods")
@@ -6470,6 +6503,62 @@ def main():
                                 st.info(f"📈 **P/B Analysis:** Trading in line with peers ({pb_premium:+.1f}% premium).")
                         else:
                             st.warning("Relative valuation calculation failed")
+                
+                    # Stock Price Comparison Tab (if enabled)
+                    if tab_stock and enable_stock_comparison and STOCK_COMPARISON_AVAILABLE:
+                        with tab_stock:
+                            st.subheader("📈 Stock Price vs Revenue & EPS Analysis")
+                            
+                            with st.spinner("Fetching stock price data..."):
+                                try:
+                                    # Determine years to fetch (max 4 for Yahoo Finance)
+                                    years_to_fetch = min(historical_years_listed, 4)
+                                    
+                                    # Fetch comparison data
+                                    stock_comp_data = get_stock_comparison_data_listed(
+                                        ticker=full_ticker,
+                                        company_name=company_name,
+                                        financials=financials,
+                                        num_years=years_to_fetch
+                                    )
+                                    
+                                    if stock_comp_data and stock_comp_data['chart_fig']:
+                                        st.plotly_chart(stock_comp_data['chart_fig'], use_container_width=True)
+                                        
+                                        # Show data tables in expanders
+                                        with st.expander("📊 View Raw Data"):
+                                            col1, col2, col3 = st.columns(3)
+                                            
+                                            with col1:
+                                                st.markdown("**Revenue Data**")
+                                                if stock_comp_data['revenue_df'] is not None:
+                                                    st.dataframe(stock_comp_data['revenue_df'], hide_index=True)
+                                                else:
+                                                    st.info("No revenue data available")
+                                            
+                                            with col2:
+                                                st.markdown("**EPS Data**")
+                                                if stock_comp_data['eps_df'] is not None:
+                                                    st.dataframe(stock_comp_data['eps_df'], hide_index=True)
+                                                else:
+                                                    st.info("No EPS data available")
+                                            
+                                            with col3:
+                                                st.markdown("**Stock Price Summary**")
+                                                if stock_comp_data['stock_prices_df'] is not None:
+                                                    price_df = stock_comp_data['stock_prices_df']
+                                                    st.metric("Latest Price", f"₹{price_df['Close'].iloc[-1]:.2f}")
+                                                    st.metric("Period Return", f"{((price_df['Close'].iloc[-1] - price_df['Close'].iloc[0]) / price_df['Close'].iloc[0] * 100):.2f}%")
+                                                    st.metric("Major Changes", f"{price_df['is_major'].sum()}" if 'is_major' in price_df.columns else "N/A")
+                                                else:
+                                                    st.info("No stock price data available")
+                                        
+                                        st.info(f"💡 Chart shows {years_to_fetch} years of data (Yahoo Finance limit: 4 years max)")
+                                    else:
+                                        st.warning("Could not generate stock comparison chart. Check if ticker and financial data are available.")
+                                
+                                except Exception as e:
+                                    st.error(f"Error generating stock comparison: {str(e)}")
                 
                     # Bank DCF Tab (if calculated)
                     if bank_dcf_result:
@@ -8751,6 +8840,15 @@ def main():
                     key='screener_proj_years',
                     help="Number of years to project into the future"
                 )
+            
+            # Stock Price Comparison Feature Toggle
+            st.markdown("**📈 Stock Price Analysis**")
+            enable_stock_comparison_screener = st.checkbox(
+                "Show Stock Price vs Revenue & EPS Comparison",
+                value=False,
+                key='screener_stock_comparison',
+                help="Display chart comparing stock price movements with revenue and EPS trends (based on selected historical years, max 10 years)"
+            )
         
         with col2:
             tax_rate_screener = st.number_input(
@@ -9290,6 +9388,10 @@ def main():
                         tab_list.append("📚 RIM Valuation")
                     if run_comp_screener and peer_tickers_screener:
                         tab_list.append("📊 Comparative Valuation")
+                    
+                    # Add Stock Comparison tab if enabled
+                    if enable_stock_comparison_screener and STOCK_COMPARISON_AVAILABLE:
+                        tab_list.append("📈 Stock vs Financials")
                     
                     tabs = st.tabs(tab_list)
                     tab_idx = 0
@@ -9833,6 +9935,71 @@ def main():
                                             st.metric("DCF + Comp Avg", f"₹{combined_avg:.2f}")
                             else:
                                 st.warning("Could not fetch comparable companies data")
+                    
+                    # Stock Price Comparison Tab (if enabled)
+                    if enable_stock_comparison_screener and STOCK_COMPARISON_AVAILABLE:
+                        with tabs[tab_idx]:
+                            st.subheader("📈 Stock Price vs Revenue & EPS Analysis")
+                            
+                            if ticker_symbol_screener and ticker_symbol_screener.strip():
+                                with st.spinner("Fetching stock price data..."):
+                                    try:
+                                        # Construct full ticker
+                                        full_ticker_screener = f"{ticker_symbol_screener.strip().upper()}.{exchange_screener}"
+                                        
+                                        # Determine years to fetch (max 10 for Screener)
+                                        years_to_fetch = min(historical_years_screener, 10)
+                                        
+                                        # Fetch comparison data
+                                        stock_comp_data_screener = get_stock_comparison_data_screener(
+                                            ticker=full_ticker_screener,
+                                            company_name=company_name_screener,
+                                            balance_sheet_df=balance_sheet_df,
+                                            pnl_df=pnl_df,
+                                            num_years=years_to_fetch
+                                        )
+                                        
+                                        if stock_comp_data_screener and stock_comp_data_screener['chart_fig']:
+                                            st.plotly_chart(stock_comp_data_screener['chart_fig'], use_container_width=True)
+                                            
+                                            # Show data tables in expanders
+                                            with st.expander("📊 View Raw Data"):
+                                                col1, col2, col3 = st.columns(3)
+                                                
+                                                with col1:
+                                                    st.markdown("**Revenue Data**")
+                                                    if stock_comp_data_screener['revenue_df'] is not None:
+                                                        st.dataframe(stock_comp_data_screener['revenue_df'], hide_index=True)
+                                                    else:
+                                                        st.info("No revenue data available")
+                                                
+                                                with col2:
+                                                    st.markdown("**EPS Data**")
+                                                    if stock_comp_data_screener['eps_df'] is not None:
+                                                        st.dataframe(stock_comp_data_screener['eps_df'], hide_index=True)
+                                                    else:
+                                                        st.info("No EPS data available")
+                                                
+                                                with col3:
+                                                    st.markdown("**Stock Price Summary**")
+                                                    if stock_comp_data_screener['stock_prices_df'] is not None:
+                                                        price_df = stock_comp_data_screener['stock_prices_df']
+                                                        st.metric("Latest Price", f"₹{price_df['Close'].iloc[-1]:.2f}")
+                                                        st.metric("Period Return", f"{((price_df['Close'].iloc[-1] - price_df['Close'].iloc[0]) / price_df['Close'].iloc[0] * 100):.2f}%")
+                                                        st.metric("Major Changes", f"{price_df['is_major'].sum()}" if 'is_major' in price_df.columns else "N/A")
+                                                    else:
+                                                        st.info("No stock price data available")
+                                            
+                                            st.info(f"💡 Chart shows {years_to_fetch} years of data (Screener Excel mode supports up to 10 years)")
+                                        else:
+                                            st.warning("Could not generate stock comparison chart. Check if ticker and Excel data are valid.")
+                                    
+                                    except Exception as e:
+                                        st.error(f"Error generating stock comparison: {str(e)}")
+                            else:
+                                st.warning("Please enter a stock ticker symbol to view price comparison")
+                        
+                        tab_idx += 1
                     
                     # ================================
                     # SUMMARY & DOWNLOAD
