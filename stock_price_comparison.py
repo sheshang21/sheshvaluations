@@ -205,24 +205,6 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
     
     from plotly.subplots import make_subplots
     import plotly.graph_objects as go
-    import streamlit as st
-    
-    # DEBUG - Check what data we have
-    st.write("DEBUG DATA CHECK:")
-    st.write(f"Revenue data: {revenue_df is not None and not revenue_df.empty}")
-    if revenue_df is not None and not revenue_df.empty:
-        st.write(f"Revenue shape: {revenue_df.shape}")
-        st.write(revenue_df)
-    
-    st.write(f"Stock price data: {stock_prices_df is not None and not stock_prices_df.empty}")
-    if stock_prices_df is not None and not stock_prices_df.empty:
-        st.write(f"Stock price shape: {stock_prices_df.shape}")
-        st.write(f"Price range: {stock_prices_df['Close'].min():.2f} - {stock_prices_df['Close'].max():.2f}")
-    
-    st.write(f"EPS data: {eps_df is not None and not eps_df.empty}")
-    if eps_df is not None and not eps_df.empty:
-        st.write(f"EPS shape: {eps_df.shape}")
-        st.write(eps_df)
     
     # Create figure with multiple y-axes
     fig = go.Figure()
@@ -236,7 +218,8 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                 name='Revenue (₹ Cr)',
                 marker_color='#1f77b4',  # Dark blue
                 opacity=0.7,
-                yaxis='y'
+                yaxis='y',
+                xaxis='x'
             )
         )
     
@@ -253,7 +236,8 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                 name='Stock Price (₹)',
                 line=dict(color='#2ca02c', width=3),  # Green
                 mode='lines',
-                yaxis='y2'
+                yaxis='y2',
+                xaxis='x'
             )
         )
         
@@ -272,6 +256,7 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                         line=dict(color='darkred', width=2)
                     ),
                     yaxis='y2',
+                    xaxis='x',
                     hovertemplate='<b>%{x}</b><br>Price: ₹%{y:.2f}<br>Change: %{customdata:.2f}%<extra></extra>',
                     customdata=major_changes['pct_change']
                 )
@@ -287,7 +272,8 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                 line=dict(color='#ff7f0e', width=4, dash='dash'),  # Orange
                 mode='lines+markers',
                 marker=dict(size=12, symbol='diamond'),
-                yaxis='y3'
+                yaxis='y3',
+                xaxis='x'
             )
         )
     
@@ -299,7 +285,8 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
         ),
         xaxis=dict(
             title="Time Period",
-            gridcolor='lightgray'
+            gridcolor='lightgray',
+            type='date'  # Use date type to handle both dates and years
         ),
         yaxis=dict(
             title=dict(
@@ -381,38 +368,18 @@ def get_stock_comparison_data_listed(ticker, company_name, financials, num_years
         
         # Extract EPS from financials
         eps_df = None
-        st.write("DEBUG EPS EXTRACTION:")
-        st.write(f"'years' in financials: {'years' in financials}")
-        st.write(f"'net_income' in financials: {'net_income' in financials}")
-        st.write(f"'shares_outstanding' in financials: {'shares_outstanding' in financials}")
-        
-        if 'years' in financials:
-            st.write(f"Years: {financials['years']}")
-        if 'net_income' in financials:
-            st.write(f"Net income: {financials['net_income']}")
-        if 'shares_outstanding' in financials:
-            st.write(f"Shares: {financials['shares_outstanding']}")
-        
         if 'years' in financials and 'net_income' in financials and 'shares_outstanding' in financials:
             years = financials['years'][-num_years:]
             net_incomes = financials['net_income'][-num_years:]  # Usually in Crores or Millions
             shares = financials['shares_outstanding'][-num_years:]  # Actual count
             
-            st.write(f"Calculating EPS with {len(years)} years")
-            st.write(f"Net incomes: {net_incomes}")
-            st.write(f"Shares: {shares}")
-            
             # Convert to EPS: (Net Income * 10^7) / Shares = EPS in rupees
             # If net income is in Crores, multiply by 10000000 to get actual rupees
             eps_values = [(ni * 10000000) / sh if sh > 0 else 0 for ni, sh in zip(net_incomes, shares)]
-            st.write(f"Calculated EPS values: {eps_values}")
-            
             eps_df = pd.DataFrame({
                 'Year': years,
                 'EPS': eps_values
             })
-            st.write("EPS DataFrame created:")
-            st.write(eps_df)
         
         # Create chart
         chart_fig = None
