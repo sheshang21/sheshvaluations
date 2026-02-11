@@ -10031,8 +10031,8 @@ def main():
                                         stock_comp_data_screener = get_stock_comparison_data_screener(
                                             ticker=full_ticker_screener,
                                             company_name=company_name_screener,
-                                            balance_sheet_df=balance_sheet_df,
-                                            pnl_df=pnl_df,
+                                            balance_sheet_df=df_bs_screener,
+                                            pnl_df=df_pl_screener,
                                             num_years=years_to_fetch
                                         )
                                         
