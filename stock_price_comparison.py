@@ -372,29 +372,63 @@ def get_stock_comparison_data_listed(ticker, company_name, financials, num_years
         eps_df = None
         try:
             stock = yf.Ticker(ticker)
-            # Get financials which includes EPS data
-            financials_yf = stock.financials
             
-            if financials_yf is not None and not financials_yf.empty:
-                # Try to get EPS from info first (easier)
-                info = stock.info
-                
-                # Get historical EPS from quarterly/annual earnings
+            # Method 1: Try earnings data
+            try:
                 earnings = stock.earnings
-                if earnings is not None and not earnings.empty and 'Earnings' in earnings.columns:
-                    # earnings has Year index and Earnings column
-                    eps_data = earnings[['Earnings']].copy()
-                    eps_data = eps_data.reset_index()
-                    eps_data.columns = ['Year', 'EPS']
+                if earnings is not None and not earnings.empty:
+                    st.write(f"DEBUG: earnings columns = {earnings.columns.tolist()}")
+                    st.write(f"DEBUG: earnings data =\n{earnings}")
                     
-                    # Filter to last num_years
-                    eps_data = eps_data.tail(num_years)
-                    eps_df = eps_data
-                    st.success(f"✅ Fetched EPS from Yahoo Finance: {len(eps_df)} years")
-                else:
-                    st.warning("⚠️ Could not fetch EPS from Yahoo Finance earnings data")
-            else:
-                st.warning("⚠️ Yahoo Finance financials data not available")
+                    if 'Earnings' in earnings.columns:
+                        eps_data = earnings[['Earnings']].copy()
+                        eps_data = eps_data.reset_index()
+                        eps_data.columns = ['Year', 'EPS']
+                        eps_data = eps_data.tail(num_years)
+                        eps_df = eps_data
+                        st.success(f"✅ Method 1: Got EPS from earnings")
+            except Exception as e:
+                st.write(f"Method 1 failed: {e}")
+            
+            # Method 2: Try quarterly earnings
+            if eps_df is None:
+                try:
+                    quarterly_earnings = stock.quarterly_earnings
+                    if quarterly_earnings is not None and not quarterly_earnings.empty:
+                        st.write(f"DEBUG: quarterly_earnings columns = {quarterly_earnings.columns.tolist()}")
+                        st.write(f"DEBUG: quarterly_earnings head =\n{quarterly_earnings.head()}")
+                        
+                        if 'Earnings' in quarterly_earnings.columns:
+                            # Group by year and sum
+                            quarterly_earnings_copy = quarterly_earnings.reset_index()
+                            quarterly_earnings_copy['Year'] = pd.to_datetime(quarterly_earnings_copy['index']).dt.year
+                            annual_eps = quarterly_earnings_copy.groupby('Year')['Earnings'].sum().reset_index()
+                            annual_eps.columns = ['Year', 'EPS']
+                            annual_eps = annual_eps.tail(num_years)
+                            eps_df = annual_eps
+                            st.success(f"✅ Method 2: Got EPS from quarterly earnings")
+                except Exception as e:
+                    st.write(f"Method 2 failed: {e}")
+            
+            # Method 3: Try info dict
+            if eps_df is None:
+                try:
+                    info = stock.info
+                    if 'trailingEps' in info and info['trailingEps']:
+                        # Just use current EPS for all years (not ideal but something)
+                        current_eps = info['trailingEps']
+                        years = financials['years'][-num_years:] if 'years' in financials else list(range(2022, 2022+num_years))
+                        eps_df = pd.DataFrame({
+                            'Year': years,
+                            'EPS': [current_eps] * len(years)
+                        })
+                        st.warning(f"⚠️ Method 3: Using current EPS ({current_eps}) for all years")
+                except Exception as e:
+                    st.write(f"Method 3 failed: {e}")
+            
+            if eps_df is None:
+                st.error("❌ All methods failed to fetch EPS")
+                
         except Exception as e:
             st.error(f"❌ Error fetching EPS from Yahoo Finance: {str(e)}")
         
