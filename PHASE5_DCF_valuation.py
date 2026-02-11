@@ -8601,15 +8601,6 @@ def main():
 
 
     elif mode == "Screener Excel Mode (Screener.in Template)":
-        st.subheader("📊 Screener Excel Mode - Screener.in Template Format")
-        
-        st.info("""
-        **📋 Screener Excel Template Format:**
-        - **Sheet 1:** Balance Sheet (with years in Row 2, items in Column A)
-        - **Sheet 2:** Profit and Loss Account (with years in Row 2, items in Column A)
-        
-        Use the exact Screener.in export format for best results.
-        """)
         
         # Add template download button
         st.markdown("#### 📥 Download Screener Template")
