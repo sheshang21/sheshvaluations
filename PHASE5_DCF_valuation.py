@@ -5168,6 +5168,11 @@ def calculate_dcf_valuation(projections, wacc_details, terminal_growth, num_shar
 def main():
     """Main DCF UI function - can be called from dashboard or run standalone"""
     
+    # CHECK STOCK COMPARISON MODULE STATUS IMMEDIATELY
+    st.sidebar.write(f"🔍 STOCK_COMPARISON_AVAILABLE: {STOCK_COMPARISON_AVAILABLE}")
+    if not STOCK_COMPARISON_AVAILABLE:
+        st.sidebar.error(f"Stock comparison import failed: {STOCK_COMPARISON_ERROR}")
+    
     # Initialize session state for peer auto-fetch (Screener mode)
     if 'nse_peers_input' not in st.session_state:
         st.session_state.nse_peers_input = ''
@@ -7066,8 +7071,8 @@ def main():
                     else:
                         st.info("💡 Complete more valuation methods to see comprehensive comparison chart")
                 
-                # Tabs for detailed output
-                tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+                # Tabs for detailed output - make dynamic
+                tab_list_nonbank = [
                     "📊 Historical Analysis",
                     "📈 Projections",
                     "💰 FCF Working",
@@ -7079,7 +7084,26 @@ def main():
                     "💰 Dividend Discount Model",
                     "🏢 Residual Income Model",
                     "⚙️ Assumptions & Parameters"
-                ])
+                ]
+                
+                # Add Stock Comparison tab if enabled
+                enable_stock_comparison_state = st.session_state.get('enable_stock_comparison_listed', False)
+                if enable_stock_comparison_state and STOCK_COMPARISON_AVAILABLE:
+                    tab_list_nonbank.append("📈 Stock vs Financials")
+                
+                tabs_nonbank = st.tabs(tab_list_nonbank)
+                tab1 = tabs_nonbank[0]
+                tab2 = tabs_nonbank[1]
+                tab3 = tabs_nonbank[2]
+                tab4 = tabs_nonbank[3]
+                tab5 = tabs_nonbank[4]
+                tab6 = tabs_nonbank[5]
+                tab7 = tabs_nonbank[6]
+                tab8 = tabs_nonbank[7]
+                tab9 = tabs_nonbank[8]
+                tab10 = tabs_nonbank[9]
+                tab11 = tabs_nonbank[10]
+                tab_stock_nonbank = tabs_nonbank[11] if len(tabs_nonbank) > 11 else None
                 
                 with tab1:
                     st.subheader("📊 Comprehensive Historical Financial Analysis")
@@ -7867,6 +7891,62 @@ def main():
                             
                             st.dataframe(pd.DataFrame(drivers_data, columns=['Parameter', 'Value', 'Source']),
                                        use_container_width=True, hide_index=True, height=200)
+                
+                # Stock Price Comparison Tab (if enabled)
+                if tab_stock_nonbank and enable_stock_comparison_state and STOCK_COMPARISON_AVAILABLE:
+                    with tab_stock_nonbank:
+                        st.subheader("📈 Stock Price vs Revenue & EPS Analysis")
+                        
+                        with st.spinner("Fetching stock price data..."):
+                            try:
+                                # Determine years to fetch (max 4 for Yahoo Finance)
+                                years_to_fetch = min(historical_years_listed, 4)
+                                
+                                # Fetch comparison data
+                                stock_comp_data = get_stock_comparison_data_listed(
+                                    ticker=full_ticker,
+                                    company_name=company_name,
+                                    financials=financials,
+                                    num_years=years_to_fetch
+                                )
+                                
+                                if stock_comp_data and stock_comp_data['chart_fig']:
+                                    st.plotly_chart(stock_comp_data['chart_fig'], use_container_width=True)
+                                    
+                                    # Show data tables in expanders
+                                    with st.expander("📊 View Raw Data"):
+                                        col1, col2, col3 = st.columns(3)
+                                        
+                                        with col1:
+                                            st.markdown("**Revenue Data**")
+                                            if stock_comp_data['revenue_df'] is not None:
+                                                st.dataframe(stock_comp_data['revenue_df'], hide_index=True)
+                                            else:
+                                                st.info("No revenue data available")
+                                        
+                                        with col2:
+                                            st.markdown("**EPS Data**")
+                                            if stock_comp_data['eps_df'] is not None:
+                                                st.dataframe(stock_comp_data['eps_df'], hide_index=True)
+                                            else:
+                                                st.info("No EPS data available")
+                                        
+                                        with col3:
+                                            st.markdown("**Stock Price Summary**")
+                                            if stock_comp_data['stock_prices_df'] is not None:
+                                                price_df = stock_comp_data['stock_prices_df']
+                                                st.metric("Latest Price", f"₹{price_df['Close'].iloc[-1]:.2f}")
+                                                st.metric("Period Return", f"{((price_df['Close'].iloc[-1] - price_df['Close'].iloc[0]) / price_df['Close'].iloc[0] * 100):.2f}%")
+                                                st.metric("Major Changes", f"{price_df['is_major'].sum()}" if 'is_major' in price_df.columns else "N/A")
+                                            else:
+                                                st.info("No stock price data available")
+                                    
+                                    st.info(f"💡 Chart shows {years_to_fetch} years of data (Yahoo Finance limit: 4 years max)")
+                                else:
+                                    st.warning("Could not generate stock comparison chart. Check if ticker and financial data are available.")
+                            
+                            except Exception as e:
+                                st.error(f"Error generating stock comparison: {str(e)}")
     
     
     elif mode == "Unlisted Company (Excel Upload)":
