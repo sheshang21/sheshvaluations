@@ -5858,6 +5858,7 @@ def main():
             enable_stock_comparison = st.checkbox(
                 "📈 Show Stock Price vs Revenue & EPS chart",
                 value=False,
+                key='enable_stock_comparison_listed',
                 help="Compare stock price with financials (max 4 years)"
             )
         
@@ -6230,7 +6231,8 @@ def main():
                 
                     # Add Stock Comparison tab if enabled
                     stock_comp_data = None
-                    if enable_stock_comparison and STOCK_COMPARISON_AVAILABLE:
+                    enable_stock_comparison_state = st.session_state.get('enable_stock_comparison_listed', False)
+                    if enable_stock_comparison_state and STOCK_COMPARISON_AVAILABLE:
                         tabs_list.append("📈 Stock vs Financials")
                 
                     # Add Bank DCF tab if calculated
@@ -6245,7 +6247,7 @@ def main():
                     tab3 = tabs[tab_idx]; tab_idx += 1
                     tab4 = tabs[tab_idx]; tab_idx += 1
                     tab5 = tabs[tab_idx]; tab_idx += 1
-                    tab_stock = tabs[tab_idx] if enable_stock_comparison and STOCK_COMPARISON_AVAILABLE else None
+                    tab_stock = tabs[tab_idx] if enable_stock_comparison_state and STOCK_COMPARISON_AVAILABLE else None
                     if tab_stock: tab_idx += 1
                     tab6 = tabs[tab_idx] if bank_dcf_result else None
                 
@@ -6504,7 +6506,7 @@ def main():
                             st.warning("Relative valuation calculation failed")
                 
                     # Stock Price Comparison Tab (if enabled)
-                    if tab_stock and enable_stock_comparison and STOCK_COMPARISON_AVAILABLE:
+                    if tab_stock and enable_stock_comparison_state and STOCK_COMPARISON_AVAILABLE:
                         with tab_stock:
                             st.subheader("📈 Stock Price vs Revenue & EPS Analysis")
                             
@@ -9388,7 +9390,8 @@ def main():
                         tab_list.append("📊 Comparative Valuation")
                     
                     # Add Stock Comparison tab if enabled
-                    if enable_stock_comparison_screener and STOCK_COMPARISON_AVAILABLE:
+                    enable_stock_comparison_screener_state = st.session_state.get('screener_stock_comparison', False)
+                    if enable_stock_comparison_screener_state and STOCK_COMPARISON_AVAILABLE:
                         tab_list.append("📈 Stock vs Financials")
                     
                     tabs = st.tabs(tab_list)
@@ -9935,7 +9938,7 @@ def main():
                                 st.warning("Could not fetch comparable companies data")
                     
                     # Stock Price Comparison Tab (if enabled)
-                    if enable_stock_comparison_screener and STOCK_COMPARISON_AVAILABLE:
+                    if enable_stock_comparison_screener_state and STOCK_COMPARISON_AVAILABLE:
                         with tabs[tab_idx]:
                             st.subheader("📈 Stock Price vs Revenue & EPS Analysis")
                             
