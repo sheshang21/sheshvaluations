@@ -191,6 +191,7 @@ def identify_major_price_changes(price_df, threshold_pct=5.0):
 def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, company_name="Company"):
     """
     Create combined chart: Stock Price (line) + Revenue (bars) + EPS (line)
+    Uses 3 separate y-axes for proper scaling
     
     Args:
         stock_prices_df: Daily stock prices DataFrame
@@ -202,42 +203,26 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
         Plotly figure object
     """
     
-    # Create figure with secondary y-axis
-    fig = make_subplots(
-        rows=1, cols=1,
-        specs=[[{"secondary_y": True}]]
-    )
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
     
-    # Add Revenue as bars (secondary y-axis - so it doesn't interfere with stock/EPS)
+    # Create figure with multiple y-axes
+    fig = go.Figure()
+    
+    # Add Revenue as bars (y-axis 1)
     if revenue_df is not None and not revenue_df.empty:
         fig.add_trace(
             go.Bar(
                 x=revenue_df['Year'],
                 y=revenue_df['Revenue_Cr'],
                 name='Revenue (₹ Cr)',
-                marker_color='lightblue',
-                opacity=0.6,
-                yaxis='y2'
-            ),
-            secondary_y=True
-        )
-    
-    # Add EPS as line (primary y-axis)
-    if eps_df is not None and not eps_df.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=eps_df['Year'],
-                y=eps_df['EPS'],
-                name='EPS (₹)',
-                line=dict(color='orange', width=3, dash='dash'),
-                mode='lines+markers',
-                marker=dict(size=10),
+                marker_color='#1f77b4',  # Dark blue
+                opacity=0.7,
                 yaxis='y'
-            ),
-            secondary_y=False
+            )
         )
     
-    # Add Stock Price as line (primary y-axis with EPS)
+    # Add Stock Price as line (y-axis 2)
     if stock_prices_df is not None and not stock_prices_df.empty:
         # Identify major changes
         major_changes = stock_prices_df[stock_prices_df['is_major'] == True] if 'is_major' in stock_prices_df.columns else pd.DataFrame()
@@ -248,11 +233,10 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                 x=stock_prices_df['Date'],
                 y=stock_prices_df['Close'],
                 name='Stock Price (₹)',
-                line=dict(color='green', width=2),
+                line=dict(color='#2ca02c', width=3),  # Green
                 mode='lines',
-                yaxis='y'
-            ),
-            secondary_y=False
+                yaxis='y2'
+            )
         )
         
         # Highlight major changes
@@ -265,24 +249,63 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
                     mode='markers',
                     marker=dict(
                         color='red',
-                        size=8,
+                        size=10,
                         symbol='circle',
-                        line=dict(color='darkred', width=1)
+                        line=dict(color='darkred', width=2)
                     ),
-                    yaxis='y',
+                    yaxis='y2',
                     hovertemplate='<b>%{x}</b><br>Price: ₹%{y:.2f}<br>Change: %{customdata:.2f}%<extra></extra>',
                     customdata=major_changes['pct_change']
-                ),
-                secondary_y=False
+                )
             )
     
-    # Update layout
+    # Add EPS as line (y-axis 3)
+    if eps_df is not None and not eps_df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=eps_df['Year'],
+                y=eps_df['EPS'],
+                name='EPS (₹)',
+                line=dict(color='#ff7f0e', width=4, dash='dash'),  # Orange
+                mode='lines+markers',
+                marker=dict(size=12, symbol='diamond'),
+                yaxis='y3'
+            )
+        )
+    
+    # Update layout with 3 y-axes
     fig.update_layout(
         title=dict(
             text=f"{company_name}: Stock Price vs Revenue & EPS",
-            font=dict(size=18, color='darkblue')
+            font=dict(size=20, color='#1f77b4')
         ),
-        xaxis_title="Time Period",
+        xaxis=dict(
+            title="Time Period",
+            gridcolor='lightgray'
+        ),
+        yaxis=dict(
+            title="Revenue (₹ Cr)",
+            titlefont=dict(color='#1f77b4'),
+            tickfont=dict(color='#1f77b4'),
+            side='left'
+        ),
+        yaxis2=dict(
+            title="Stock Price (₹)",
+            titlefont=dict(color='#2ca02c'),
+            tickfont=dict(color='#2ca02c'),
+            anchor='x',
+            overlaying='y',
+            side='right'
+        ),
+        yaxis3=dict(
+            title="EPS (₹)",
+            titlefont=dict(color='#ff7f0e'),
+            tickfont=dict(color='#ff7f0e'),
+            anchor='free',
+            overlaying='y',
+            side='right',
+            position=0.95
+        ),
         height=600,
         hovermode='x unified',
         legend=dict(
@@ -290,26 +313,13 @@ def create_stock_vs_financials_chart(stock_prices_df, revenue_df, eps_df, compan
             yanchor="bottom",
             y=1.02,
             xanchor="center",
-            x=0.5
+            x=0.5,
+            font=dict(size=12)
         ),
         plot_bgcolor='white',
-        paper_bgcolor='white'
+        paper_bgcolor='white',
+        margin=dict(r=150)  # Extra margin for 3rd y-axis
     )
-    
-    # Update y-axes
-    fig.update_yaxes(
-        title_text="Stock Price (₹) / EPS (₹)",
-        secondary_y=False,
-        gridcolor='lightgray'
-    )
-    
-    fig.update_yaxes(
-        title_text="Revenue (₹ Cr)",
-        secondary_y=True,
-        gridcolor='lightgray'
-    )
-    
-    fig.update_xaxes(gridcolor='lightgray')
     
     return fig
 
