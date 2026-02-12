@@ -3442,19 +3442,19 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 results['target']['eps'] = 0
                 
         else:
-            # Unlisted company
+            # Unlisted company - arrays have oldest first, newest last, so [-1] = latest
             results['target'] = {
                 'name': 'Target Company (Unlisted)',
                 'current_price': 0,
                 'shares': target_shares,
                 'market_cap': 0,
                 'enterprise_value': 0,
-                'revenue': target_financials['revenue'][-1] * 100000,  # Convert from Lacs
+                'revenue': target_financials['revenue'][-1] * 100000,  # [-1] = latest year
                 'ebitda': target_financials['ebitda'][-1] * 100000,
                 'net_income': target_financials['nopat'][-1] * 100000,  # Using NOPAT as proxy
                 'book_value_per_share': 0,
                 'total_debt': (target_financials['st_debt'][-1] + target_financials['lt_debt'][-1]) * 100000,
-                'cash': target_financials['cash'][0] * 100000,
+                'cash': target_financials['cash'][-1] * 100000,
                 'eps': (target_financials['nopat'][-1] * 100000) / target_shares if target_shares > 0 else 0,
             }
         
