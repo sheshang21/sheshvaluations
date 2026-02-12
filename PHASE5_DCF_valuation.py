@@ -45,6 +45,14 @@ except ImportError as e:
     SCREENER_MODE_AVAILABLE = False
     SCREENER_MODE_ERROR = str(e)
 
+# Screener Auto Download Module
+try:
+    from screener_auto_download_streamlit import integrate_with_existing_upload_section
+    AUTO_DOWNLOAD_AVAILABLE = True
+except ImportError as e:
+    AUTO_DOWNLOAD_AVAILABLE = False
+    AUTO_DOWNLOAD_ERROR = str(e)
+
 # Indian Stock Market APIs (fallback for Yahoo Finance)
 SCREENER_IMPORT_ERROR = None
 try:
@@ -2806,42 +2814,72 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         st.warning(f"Could not calculate beta for {ticker}: {str(e)}")
         return 1.0
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_risk_free_rate():
-    """Get risk-free rate from government bond yields"""
+    """Get risk-free rate from Indian government bond yields"""
     try:
-        # Fetch 10-year India G-Sec yield from yfinance
-        gsec = get_cached_ticker("^TNX")  # Using 10-year treasury as proxy
-        info = gsec.info
-        if 'previousClose' in info:
-            return info['previousClose']
-    except:
-        pass
-    
-    # Fallback to 7% for Indian G-Sec
-    return 7.0
+        # Try multiple sources for Indian 10-year G-Sec yield
+        
+        # Method 1: Try India 10Y Bond (IRBY10 or IN10Y.BOND)
+        try:
+            india_10y = yf.download('IN10Y.BOND', period='5d', progress=False, show_errors=False)
+            if not india_10y.empty and 'Close' in india_10y.columns:
+                rate = float(india_10y['Close'].iloc[-1])
+                if 0.5 < rate < 15:  # Sanity check
+                    st.success(f"✅ Indian 10Y G-Sec yield: {rate:.2f}%")
+                    return rate
+        except:
+            pass
+        
+        # Method 2: Try alternative ticker
+        try:
+            india_bond = yf.Ticker('IRBY10')
+            info = india_bond.info
+            if 'previousClose' in info and info['previousClose'] > 0:
+                rate = float(info['previousClose'])
+                if 0.5 < rate < 15:
+                    st.success(f"✅ Indian G-Sec yield (IRBY10): {rate:.2f}%")
+                    return rate
+        except:
+            pass
+        
+        # Method 3: Scrape from RBI website or use reasonable estimate
+        # For now, use a conservative estimate based on recent ranges
+        estimated_rate = 7.2  # Current typical range is 6.8-7.4%
+        st.info(f"📊 Using estimated Indian G-Sec rate: {estimated_rate:.2f}% (live data unavailable)")
+        return estimated_rate
+        
+    except Exception as e:
+        print(f"Error fetching risk-free rate: {e}")
+        st.warning(f"⚠️ Could not fetch G-Sec rate, using default: 7.0%")
+        return 7.0
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_market_return():
     """Calculate market return from Sensex historical data"""
     try:
         end_date = datetime.now()
-        start_date = datetime.now() - timedelta(days=20*365)  # 20 years for better data
+        start_date = datetime.now() - timedelta(days=20*365)  # 20 years
         
-        sensex = yf.download('^BSESN', start=start_date, end=end_date, progress=False)
+        print(f"Fetching SENSEX data from {start_date.date()} to {end_date.date()}")
+        sensex = yf.download('^BSESN', start=start_date, end=end_date, progress=False, show_errors=False)
         
-        if not sensex.empty and len(sensex) > 252:  # At least 1 year of data
-            # Calculate CAGR
+        if not sensex.empty and len(sensex) > 252:
             start_price = float(sensex['Close'].iloc[0])
             end_price = float(sensex['Close'].iloc[-1])
-            num_years = len(sensex) / 252  # 252 trading days per year
+            num_years = len(sensex) / 252
             
             if start_price > 0 and num_years > 0:
                 cagr = ((end_price / start_price) ** (1 / num_years) - 1) * 100
-                st.info(f"📊 Sensex CAGR (last {num_years:.1f} years): {cagr:.2f}%")
-                return max(8.0, min(cagr, 25.0))  # Clamp between 8% and 25%
+                cagr_clamped = max(8.0, min(cagr, 25.0))
+                st.success(f"✅ Sensex CAGR (last {num_years:.1f} years): {cagr:.2f}% → Using: {cagr_clamped:.2f}%")
+                return cagr_clamped
+        else:
+            print(f"SENSEX data insufficient: {len(sensex)} rows")
     except Exception as e:
-        st.warning(f"Could not fetch Sensex data: {str(e)}")
+        print(f"Error fetching SENSEX: {e}")
+        st.warning(f"⚠️ Could not fetch Sensex data: {str(e)[:100]}")
     
-    # Fallback
     st.warning("⚠️ Using fallback market return of 12%")
     return 12.0
 
@@ -8815,12 +8853,24 @@ def main():
                     help="NS=NSE, BO=BSE"
                 )
             
-            excel_file_screener = st.file_uploader(
-                "Upload Screener Excel Template", 
-                type=['xlsx', 'xls'],
-                key='screener_excel_upload',
-                help="Upload Excel file with 'Balance Sheet' and 'Profit and Loss Account' sheets"
-            )
+            # Integrated Auto Download or Manual Upload Section
+            if AUTO_DOWNLOAD_AVAILABLE:
+                use_auto_dl, excel_file_screener = integrate_with_existing_upload_section(
+                    cookies_path="screener_cookies.pkl"
+                )
+            else:
+                # Fallback to manual upload only
+                st.markdown("---")
+                st.markdown("### 📊 Screener Excel Data Source")
+                excel_file_screener = st.file_uploader(
+                    "Upload Screener Excel Template", 
+                    type=['xlsx', 'xls'],
+                    key='screener_excel_upload',
+                    help="Upload Excel file with 'Balance Sheet' and 'Profit and Loss Account' sheets"
+                )
+                if not AUTO_DOWNLOAD_AVAILABLE:
+                    st.info("💡 Auto-download feature not available. Please upload Excel manually.")
+
             
             st.markdown("---")
             st.markdown("**📊 Peer Companies (Both Exchanges)**")
