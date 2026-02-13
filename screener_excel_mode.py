@@ -1383,9 +1383,59 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
     # VISUAL: Pie Chart for Value Composition
     st.markdown("#### 🥧 Visual: Value Composition")
     
-    total_value = bv_per_share + pv_ri_per_share + tv_per_share
+    # Check if we have negative components
+    has_negative = (pv_ri_per_share < 0 or tv_per_share < 0)
     
-    if total_value > 0:
+    if has_negative:
+        st.warning("⚠️ **Note:** Company has negative residual income (destroying value). Pie chart shows absolute values for visualization.")
+        
+        # Use absolute values for pie chart
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=['Book Value', 'PV of RI (5Y)', 'Terminal Value'],
+            values=[abs(bv_per_share), abs(pv_ri_per_share), abs(tv_per_share)],
+            marker=dict(colors=['#2E86AB', '#E63946', '#F4D35E']),
+            textinfo='label+percent',
+            texttemplate='<b>%{label}</b><br>%{percent}',
+            hovertemplate='<b>%{label}</b><br>₹%{value:.2f} (absolute)<extra></extra>'
+        )])
+        
+        fig_pie.update_layout(
+            title="Value Components (Absolute Values)",
+            height=380
+        )
+        
+        st.plotly_chart(fig_pie, use_container_width=True)
+        
+        # Show actual signed values in a bar chart instead
+        st.markdown("#### 📊 Visual: Signed Value Components")
+        
+        fig_bar = go.Figure()
+        
+        components = ['Book Value', 'PV of RI (5Y)', 'Terminal Value', 'Total']
+        values = [bv_per_share, pv_ri_per_share, tv_per_share, value_per_share]
+        colors_signed = ['#2E86AB', '#E63946' if pv_ri_per_share < 0 else '#06A77D', 
+                        '#E63946' if tv_per_share < 0 else '#06A77D',
+                        '#E63946' if value_per_share < 0 else '#06A77D']
+        
+        fig_bar.add_trace(go.Bar(
+            x=components,
+            y=values,
+            marker_color=colors_signed,
+            text=[f"₹{v:.2f}" for v in values],
+            textposition='outside'
+        ))
+        
+        fig_bar.update_layout(
+            title="Fair Value Components (Actual Signed Values)",
+            yaxis_title="Value per Share (₹)",
+            height=320,
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_bar, use_container_width=True)
+        
+    else:
+        # All positive - normal pie chart
         fig_pie = go.Figure(data=[go.Pie(
             labels=['Book Value', 'PV of RI (5Y)', 'Terminal Value'],
             values=[bv_per_share, pv_ri_per_share, tv_per_share],
@@ -1399,6 +1449,8 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
             title="Fair Value Composition (₹ per Share)",
             height=380
         )
+        
+        st.plotly_chart(fig_pie, use_container_width=True)
         
         st.plotly_chart(fig_pie, use_container_width=True)
     
