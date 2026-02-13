@@ -140,10 +140,8 @@ class ScreenerDownloader:
             traceback.print_exc()
             return None
         
+        # Process the response
         try:
-        
-        try:
-            
             if response.status_code != 200:
                 print(f"Error: Could not access page (Status: {response.status_code})")
                 if response.status_code == 403:
