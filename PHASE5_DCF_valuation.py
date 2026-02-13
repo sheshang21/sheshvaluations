@@ -7820,7 +7820,7 @@ def main():
                                     title="Residual Income by Year (₹ Lacs)",
                                     xaxis_title="Year",
                                     yaxis_title="Residual Income (₹ Lacs)",
-                                    height=400,
+                                    height=320,
                                     showlegend=False,
                                     hovermode='x unified'
                                 )
@@ -7845,7 +7845,7 @@ def main():
                                     title="Present Value Contribution by Year (₹ Lacs)",
                                     xaxis_title="Year",
                                     yaxis_title="PV of RI (₹ Lacs)",
-                                    height=400,
+                                    height=320,
                                     showlegend=False
                                 )
                                 
@@ -7967,7 +7967,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                             fig_waterfall.update_layout(
                                 title="Fair Value Build-Up (₹ per Share)",
                                 showlegend=False,
-                                height=500,
+                                height=380,
                                 yaxis_title="Value (₹)"
                             )
                             
@@ -7990,7 +7990,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                 
                                 fig_pie.update_layout(
                                     title="Fair Value Composition (₹ per Share)",
-                                    height=500
+                                    height=380
                                 )
                                 
                                 st.plotly_chart(fig_pie, use_container_width=True)

@@ -1151,38 +1151,47 @@ def display_screener_rim_results(rim_results):
     # SECTION 3: YEAR-BY-YEAR PROJECTIONS WITH VISUALS
     st.markdown("### 📈 Year-by-Year Residual Income Projections")
     
-    # Get projection details if available
+    # Get projection details - handle both formats
     projections = rim_results.get('projections', [])
-    sum_pv_ri = rim_results.get('sum_pv_ri', 0)
-    terminal_ri_pv = rim_results.get('terminal_ri_pv', 0)
+    residual_incomes = rim_results.get('residual_incomes', [])
+    pv_residual_incomes = rim_results.get('pv_residual_incomes', [])
+    sum_pv_ri = rim_results.get('sum_pv_ri', sum(pv_residual_incomes) if pv_residual_incomes else 0)
+    terminal_ri_pv = rim_results.get('terminal_ri_pv', rim_results.get('pv_terminal', 0))
+    
+    # Convert to unified format if needed
+    if not projections and residual_incomes:
+        # Build projections from arrays (Screener format)
+        projections = []
+        for i in range(len(residual_incomes)):
+            projections.append({
+                'year': i + 1,
+                'residual_income': residual_incomes[i],
+                'pv_ri': pv_residual_incomes[i] if i < len(pv_residual_incomes) else 0
+            })
     
     if projections and len(projections) > 0:
         # Create detailed projection table
         proj_data = []
         years_list = []
-        bv_list = []
-        ni_list = []
         ri_list = []
         pv_ri_list = []
         
         for proj in projections:
             year = proj.get('year', 0)
-            bv_year = proj.get('book_value', 0) / 100000  # Convert to Lacs
-            ni_year = proj.get('net_income', 0) / 100000  # Convert to Lacs
-            ri_year = proj.get('residual_income', 0) / 100000  # Convert to Lacs
-            pv_ri_year = proj.get('pv_ri', 0) / 100000  # Convert to Lacs
+            ri_year = proj.get('residual_income', 0)
+            pv_ri_year = proj.get('pv_ri', 0)
+            
+            # Convert to Lacs if needed
+            if abs(ri_year) > 1000000:  # If in Rupees, convert to Lacs
+                ri_year = ri_year / 100000
+                pv_ri_year = pv_ri_year / 100000
             
             years_list.append(f"Year {year}")
-            bv_list.append(bv_year)
-            ni_list.append(ni_year)
             ri_list.append(ri_year)
             pv_ri_list.append(pv_ri_year)
             
             proj_data.append({
                 'Year': f"Year {year}",
-                'Book Value (₹ Lacs)': f"{bv_year:.2f}",
-                'Net Income (₹ Lacs)': f"{ni_year:.2f}",
-                'Required Return (₹ Lacs)': f"{bv_year * req_return / 100:.2f}",
                 'Residual Income (₹ Lacs)': f"{ri_year:.2f}",
                 'Discount Factor': f"{1 / ((1 + req_return/100) ** year):.4f}",
                 'PV of RI (₹ Lacs)': f"{pv_ri_year:.2f}"
@@ -1214,14 +1223,14 @@ def display_screener_rim_results(rim_results):
             title="Residual Income by Year (₹ Lacs)",
             xaxis_title="Year",
             yaxis_title="Residual Income (₹ Lacs)",
-            height=400,
+            height=320,
             showlegend=False,
             hovermode='x unified'
         )
         
         st.plotly_chart(fig_ri, use_container_width=True)
         
-        # VISUAL 2: Present Value Contribution (Waterfall)
+        # VISUAL 2: Present Value Contribution
         st.markdown("#### 💰 Visual: Present Value Contributions")
         
         fig_pv = go.Figure()
@@ -1239,16 +1248,14 @@ def display_screener_rim_results(rim_results):
             title="Present Value Contribution by Year (₹ Lacs)",
             xaxis_title="Year",
             yaxis_title="PV of RI (₹ Lacs)",
-            height=400,
+            height=320,
             showlegend=False
         )
         
         st.plotly_chart(fig_pv, use_container_width=True)
         
     else:
-        st.warning("⚠️ No year-by-year projection data available. This may indicate an issue with the RIM calculation.")
-        st.info("Projection data structure:")
-        st.json(rim_results)
+        st.warning("⚠️ No year-by-year projection data available. Check RIM input parameters.")
         
         # Show ACTUAL calculations for ALL years
         st.markdown("### 🔢 Detailed Calculations for Each Year")
@@ -1367,7 +1374,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
     fig_waterfall.update_layout(
         title="Fair Value Build-Up (₹ per Share)",
         showlegend=False,
-        height=500,
+        height=380,
         yaxis_title="Value (₹)"
     )
     
@@ -1390,7 +1397,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
         
         fig_pie.update_layout(
             title="Fair Value Composition (₹ per Share)",
-            height=500
+            height=380
         )
         
         st.plotly_chart(fig_pie, use_container_width=True)
