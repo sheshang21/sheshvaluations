@@ -4213,11 +4213,13 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         elif historical_cagr > 150.0:
             # Cap extremely excessive growth - maximum 150%
             avg_growth = 150.0
-            st.warning(f"⚠️ Historical Revenue CAGR ({historical_cagr:.1f}%) capped at 150%. Original: {historical_cagr:.1f}%")
+            cagr_value = historical_cagr if historical_cagr is not None else 0
+            st.warning(f"⚠️ Historical Revenue CAGR ({cagr_value:.1f}%) capped at 150%. Original: {cagr_value:.1f}%")
         else:
             avg_growth = historical_cagr
             if historical_cagr is not None and historical_cagr > 50.0:
-                st.info(f"📊 High Growth Detected: Revenue CAGR = {historical_cagr:.1f}% (using actual historical rate)")
+                cagr_value = historical_cagr  # Store value to avoid scope issues
+                st.info(f"📊 High Growth Detected: Revenue CAGR = {cagr_value:.1f}% (using actual historical rate)")
     else:
         avg_growth = 8.0  # Reasonable default for Indian economy
     
