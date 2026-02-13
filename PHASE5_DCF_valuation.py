@@ -63,27 +63,106 @@ except ImportError as e:
     SCREENER_IMPORT_ERROR = f"ImportError: {e}"
     # Define robust embedded screener with better parsing
     def fetch_screener_financials(symbol, num_years=5):
-        """Robust Screener.in scraper with detailed logging"""
+        """Robust Screener.in scraper with detailed logging and Streamlit Cloud compatibility"""
         import time as _time
         import random as _random
         try:
             from bs4 import BeautifulSoup
             import requests
             import streamlit as st
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
             
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'}
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Connection': 'keep-alive'
+            }
+            
+            # Set up session with retries
+            session = requests.Session()
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["HEAD", "GET", "OPTIONS"]
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            
             urls_to_try = [f"https://www.screener.in/company/{symbol}/consolidated/", f"https://www.screener.in/company/{symbol}/"]
             
             soup = None
+            connection_error = False
+            last_error = None
+            
             for url in urls_to_try:
-                _time.sleep(_random.uniform(1.5, 3.0))
-                resp = requests.get(url, headers=headers, timeout=20)
-                if resp.status_code == 200:
-                    soup = BeautifulSoup(resp.content, 'lxml')
-                    break
+                try:
+                    _time.sleep(_random.uniform(1.5, 3.0))
+                    st.info(f"🔍 Attempting to fetch from: {url}")
+                    
+                    # Try with SSL verification first
+                    try:
+                        resp = session.get(url, headers=headers, timeout=30, verify=True)
+                    except requests.exceptions.SSLError:
+                        st.warning("⚠️ SSL verification failed, retrying without verification...")
+                        resp = session.get(url, headers=headers, timeout=30, verify=False)
+                    
+                    if resp.status_code == 200:
+                        soup = BeautifulSoup(resp.content, 'lxml')
+                        st.success(f"✅ Successfully connected to Screener.in")
+                        break
+                    else:
+                        st.warning(f"⚠️ Received status code {resp.status_code}, trying next URL...")
+                        
+                except requests.exceptions.ConnectionError as e:
+                    connection_error = True
+                    last_error = str(e)
+                    st.error(f"❌ CONNECTION ERROR: Cannot reach www.screener.in")
+                    
+                    # Check if it's Streamlit Cloud specific issue
+                    if "Connection refused" in str(e) or "Errno 111" in str(e):
+                        st.error("🔴 **STREAMLIT CLOUD NETWORK RESTRICTION DETECTED**")
+                        st.markdown("---")
+                        st.markdown("### ✅ Recommended Solutions:")
+                        st.markdown("""
+                        **Option 1: Use Screener Excel Mode (Recommended)**
+                        1. Visit [screener.in/company/{}/consolidated/](https://www.screener.in/company/{}/consolidated/)
+                        2. Click the **Export** button to download Excel file
+                        3. Return to this app and select **"Screener Excel Mode"**
+                        4. Upload the downloaded Excel file
+                        
+                        **Option 2: Use Yahoo Finance Mode**
+                        - For listed companies with NSE/BSE tickers
+                        - Select "Listed Company (Yahoo Finance)" mode
+                        
+                        **Option 3: Deploy Elsewhere**
+                        - Deploy on Heroku, Railway, or your own server
+                        - These platforms typically have fewer network restrictions
+                        
+                        **Option 4: Upgrade Streamlit Cloud**
+                        - Streamlit Cloud Teams/Enterprise may have better network access
+                        """.format(symbol, symbol))
+                        st.markdown("---")
+                    return None
+                    
+                except requests.exceptions.Timeout:
+                    st.warning(f"⚠️ Timeout accessing {url} (30s), trying next URL...")
+                    continue
+                    
+                except Exception as e:
+                    st.warning(f"⚠️ Error accessing {url}: {type(e).__name__}: {str(e)}")
+                    last_error = str(e)
+                    continue
             
             if soup is None:
-                st.error(f"❌ Could not access Screener.in page for {symbol}")
+                if not connection_error:
+                    st.error(f"❌ Could not access Screener.in page for {symbol}")
+                    if last_error:
+                        st.error(f"Last error: {last_error}")
+                    st.info("💡 Try using **Screener Excel Mode** instead - upload a manually downloaded file from screener.in")
                 return None
             
             company_name = soup.find('h1').get_text(strip=True) if soup.find('h1') else symbol

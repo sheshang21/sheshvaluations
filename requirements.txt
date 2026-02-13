@@ -1,5 +1,6 @@
 # Core Web Scraping & Data Fetching
 requests>=2.31.0
+urllib3>=1.26.0  # Required for connection retries
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
 html5lib>=1.1

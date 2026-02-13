@@ -71,15 +71,87 @@ class ScreenerDownloader:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.screener.in/'
+            'Referer': 'https://www.screener.in/',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
+        
+        # Set up session with retries for Streamlit Cloud compatibility
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         
         try:
             print(f"Accessing: {company_url}")
-            response = self.session.get(company_url, headers=headers, timeout=15)
+            print(f"Environment: Checking Streamlit Cloud compatibility...")
+            
+            # Try with verify=True first (proper SSL)
+            try:
+                response = self.session.get(company_url, headers=headers, timeout=30, verify=True)
+            except requests.exceptions.SSLError:
+                print("SSL verification failed, trying without SSL verification...")
+                response = self.session.get(company_url, headers=headers, timeout=30, verify=False)
+                
+        except requests.exceptions.ConnectionError as e:
+            error_msg = str(e)
+            print(f"❌ CONNECTION ERROR: Cannot reach www.screener.in")
+            print(f"Error details: {error_msg}")
+            
+            # Check if it's specifically Streamlit Cloud issue
+            if "Connection refused" in error_msg or "Errno 111" in error_msg:
+                print(f"\n🔴 STREAMLIT CLOUD NETWORK RESTRICTION")
+                print(f"This error typically occurs on Streamlit Cloud's free tier due to outbound connection restrictions.")
+                print(f"\n✅ RECOMMENDED SOLUTIONS:")
+                print(f"1. **Use Screener Excel Mode**: Upload manually downloaded Excel files")
+                print(f"   - Go to www.screener.in/company/{company_symbol}/consolidated/")
+                print(f"   - Click 'Export' button to download Excel")
+                print(f"   - Upload the file in the app's 'Screener Excel Mode'")
+                print(f"\n2. **Upgrade Streamlit Cloud**: Consider Streamlit Cloud Teams/Enterprise for better network access")
+                print(f"\n3. **Deploy elsewhere**: Use Heroku, Railway, or your own server")
+                print(f"\n4. **Use Yahoo Finance mode**: For listed companies with NSE/BSE tickers")
+            else:
+                print(f"\n⚠️  Network connection issue")
+                print(f"Possible causes:")
+                print(f"- Firewall blocking the connection")
+                print(f"- DNS resolution failure")
+                print(f"- Streamlit Cloud network policies")
+            
+            return None
+            
+        except requests.exceptions.Timeout:
+            print(f"❌ TIMEOUT: Request to www.screener.in timed out after 30 seconds")
+            print(f"The server may be slow or your network connection is unstable.")
+            print(f"Try again later or use the Excel upload feature.")
+            return None
+            
+        except Exception as e:
+            print(f"❌ UNEXPECTED ERROR: {type(e).__name__}: {str(e)}")
+            import traceback
+            print(f"Full traceback:")
+            traceback.print_exc()
+            return None
+        
+        try:
+        
+        try:
             
             if response.status_code != 200:
                 print(f"Error: Could not access page (Status: {response.status_code})")
+                if response.status_code == 403:
+                    print(f"⚠️  403 Forbidden - Access denied by server. Authentication may be required.")
+                elif response.status_code == 404:
+                    print(f"⚠️  404 Not Found - Company '{company_symbol}' not found on Screener.in")
+                elif response.status_code == 429:
+                    print(f"⚠️  429 Too Many Requests - Rate limited. Wait and try again.")
                 return None
             
             soup = BeautifulSoup(response.content, 'html.parser')
