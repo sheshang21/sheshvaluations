@@ -2901,7 +2901,6 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         st.warning(f"Could not calculate beta for {ticker}: {str(e)}")
         return 1.0
 
-@st.cache_data(show_spinner=False)  # Cache forever until refresh button clicked
 def get_risk_free_rate(custom_ticker=None):
     """
     Get risk-free rate from India 10-year Government Bond yields using Yahoo Finance.
@@ -5473,7 +5472,6 @@ def main():
             if st.button("🔄 Fetch", key='refresh_rf_listed_top'):
                 with st.spinner("Fetching from Yahoo Finance..."):
                     ticker_to_use = custom_rf_ticker_listed.strip() if custom_rf_ticker_listed.strip() else None
-                    get_risk_free_rate.clear()
                     fetched_rate = get_risk_free_rate(ticker_to_use)
                     st.session_state.cached_rf_rate_listed = fetched_rate
                 st.success(f"✓ Updated to {fetched_rate:.2f}%")
@@ -9410,7 +9408,6 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             if st.button("🔄 Fetch", key='refresh_rf_screener_top'):
                 with st.spinner("Fetching from Yahoo Finance..."):
                     ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
-                    get_risk_free_rate.clear()
                     fetched_rate = get_risk_free_rate(ticker_to_use)
                     st.session_state.cached_rf_rate_screener = fetched_rate
                 st.success(f"✓ Updated to {fetched_rate:.2f}%")
