@@ -79,6 +79,14 @@ class ScreenerDownloader:
         # Set up session with retries for Streamlit Cloud compatibility
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
+        import os
+        
+        # Disable proxy if it's blocking screener.in
+        self.session.trust_env = False
+        os.environ.pop('HTTP_PROXY', None)
+        os.environ.pop('HTTPS_PROXY', None)
+        os.environ.pop('http_proxy', None)
+        os.environ.pop('https_proxy', None)
         
         retry_strategy = Retry(
             total=3,
@@ -107,17 +115,17 @@ class ScreenerDownloader:
             print(f"Error details: {error_msg}")
             
             # Check if it's specifically Streamlit Cloud issue
-            if "Connection refused" in error_msg or "Errno 111" in error_msg:
+            if "Connection refused" in error_msg or "Errno 111" in error_msg or "Proxy" in error_msg or "403 Forbidden" in error_msg:
                 print(f"\n🔴 STREAMLIT CLOUD NETWORK RESTRICTION")
-                print(f"This error typically occurs on Streamlit Cloud's free tier due to outbound connection restrictions.")
+                print(f"⚠️  **RECENT CHANGE**: Streamlit Cloud recently blocked access to www.screener.in")
+                print(f"This is a platform-level restriction that was added after your app was working.")
                 print(f"\n✅ RECOMMENDED SOLUTIONS:")
                 print(f"1. **Use Screener Excel Mode**: Upload manually downloaded Excel files")
                 print(f"   - Go to www.screener.in/company/{company_symbol}/consolidated/")
                 print(f"   - Click 'Export' button to download Excel")
                 print(f"   - Upload the file in the app's 'Screener Excel Mode'")
-                print(f"\n2. **Upgrade Streamlit Cloud**: Consider Streamlit Cloud Teams/Enterprise for better network access")
-                print(f"\n3. **Deploy elsewhere**: Use Heroku, Railway, or your own server")
-                print(f"\n4. **Use Yahoo Finance mode**: For listed companies with NSE/BSE tickers")
+                print(f"\n2. **Deploy on Different Platform**: Use Heroku, Railway, or Render (free options)")
+                print(f"\n3. **Use Yahoo Finance mode**: For listed companies with NSE/BSE tickers")
             else:
                 print(f"\n⚠️  Network connection issue")
                 print(f"Possible causes:")

@@ -72,6 +72,13 @@ except ImportError as e:
             import streamlit as st
             from requests.adapters import HTTPAdapter
             from urllib3.util.retry import Retry
+            import os
+            
+            # Disable proxy that may be blocking screener.in
+            os.environ.pop('HTTP_PROXY', None)
+            os.environ.pop('HTTPS_PROXY', None)
+            os.environ.pop('http_proxy', None)
+            os.environ.pop('https_proxy', None)
             
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
@@ -82,6 +89,7 @@ except ImportError as e:
             
             # Set up session with retries
             session = requests.Session()
+            session.trust_env = False  # Bypass proxy blocking screener.in
             retry_strategy = Retry(
                 total=3,
                 backoff_factor=1,
