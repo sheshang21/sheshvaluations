@@ -6121,7 +6121,7 @@ def main():
             # INPUT CHANGE DETECTION - Reset results if key inputs change
             current_inputs_listed = {
                 'ticker': ticker,
-                'projection_years': projection_years,
+                'projection_years': projection_years_listed,
                 'terminal_growth': terminal_growth,
                 'tax_rate': tax_rate,
                 'manual_discount': manual_discount_rate if manual_discount_rate > 0 else None
