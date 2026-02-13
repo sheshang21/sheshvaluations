@@ -2901,6 +2901,7 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         st.warning(f"Could not calculate beta for {ticker}: {str(e)}")
         return 1.0
 
+@st.cache_data(show_spinner=False)  # Cache forever until refresh button clicked
 def get_risk_free_rate(custom_ticker=None):
     """
     Get risk-free rate from India 10-year Government Bond yields using Yahoo Finance.
@@ -5668,40 +5669,46 @@ def main():
             tax_rate = st.number_input("Tax Rate (%):", min_value=0.0, max_value=100.0, value=25.0, step=0.5, key='listed_tax')
             terminal_growth = st.number_input("Terminal Growth Rate (%):", min_value=0.0, max_value=10.0, value=4.0, step=0.5, key='listed_tg')
             
-            # Risk-free rate override (CACHED to avoid refetching on every interaction)
+            # Risk-free rate override (CACHED PERMANENTLY - only loads once)
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
             
-            # Only fetch once per session
+            # Initialize ONCE per session - never reload
             if 'cached_rf_rate_listed' not in st.session_state:
-                st.session_state.cached_rf_rate_listed = get_risk_free_rate()
+                with st.spinner("Fetching risk-free rate..."):
+                    st.session_state.cached_rf_rate_listed = get_risk_free_rate()
             
             auto_rf_rate = st.session_state.cached_rf_rate_listed
             
-            # Add custom ticker and refresh button
-            col_rf1, col_rf2, col_rf3 = st.columns([2, 2, 1])
-            with col_rf1:
-                manual_rf_rate = st.number_input(
-                    f"Risk-Free Rate (%)",
-                    min_value=0.0,
-                    max_value=20.0,
-                    value=auto_rf_rate,
-                    step=0.1,
-                    key='manual_rf_listed',
-                    help=f"Auto: {auto_rf_rate:.2f}% from ticker"
-                )
-            with col_rf2:
+            # Ticker input for custom bond/yield
+            col_t1, col_t2 = st.columns([4, 1])
+            with col_t1:
                 custom_rf_ticker = st.text_input(
-                    "Ticker",
+                    "📊 Ticker for Risk-Free Rate",
                     value="NIFTYGS10YR.NS",
                     key='custom_rf_ticker_listed',
-                    help="Bond/yield ticker for RF rate"
+                    help="Yahoo Finance ticker. Default: NIFTYGS10YR.NS (India 10Y G-Sec)"
                 )
-            with col_rf3:
+            with col_t2:
                 st.write("")
-                if st.button("🔄", key='refresh_rf_listed'):
-                    ticker_to_use = custom_rf_ticker.strip() if custom_rf_ticker.strip() else None
-                    st.session_state.cached_rf_rate_listed = get_risk_free_rate(ticker_to_use)
+                st.write("")
+                if st.button("🔄 Fetch", key='refresh_rf_listed', use_container_width=True):
+                    with st.spinner("Fetching..."):
+                        ticker_to_use = custom_rf_ticker.strip() if custom_rf_ticker.strip() else None
+                        # Clear cache and fetch fresh
+                        get_risk_free_rate.clear()
+                        st.session_state.cached_rf_rate_listed = get_risk_free_rate(ticker_to_use)
                     st.rerun()
+            
+            # Rate input
+            manual_rf_rate = st.number_input(
+                f"Risk-Free Rate (%) - Auto: {auto_rf_rate:.2f}%",
+                min_value=0.0,
+                max_value=20.0,
+                value=auto_rf_rate,
+                step=0.1,
+                key='manual_rf_listed',
+                help="Auto-fetched from ticker above. Override manually if needed."
+            )
             
             if abs(manual_rf_rate - auto_rf_rate) > 0.05:
                 st.info(f"💡 Using custom: {manual_rf_rate:.2f}% (Auto: {auto_rf_rate:.2f}%)")
@@ -9543,40 +9550,46 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 help="Long-term perpetual growth rate. Should be <= long-term GDP growth + inflation (typically 4-8% for India)"
             )
             
-            # Risk-free rate override (CACHED to avoid refetching on every interaction)
+            # Risk-free rate override (CACHED PERMANENTLY - only loads once)
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
             
-            # Only fetch once per session
+            # Initialize ONCE per session - never reload
             if 'cached_rf_rate_screener' not in st.session_state:
-                st.session_state.cached_rf_rate_screener = get_risk_free_rate()
+                with st.spinner("Fetching risk-free rate..."):
+                    st.session_state.cached_rf_rate_screener = get_risk_free_rate()
             
             auto_rf_rate_screener = st.session_state.cached_rf_rate_screener
             
-            # Add custom ticker and refresh button
-            col_rf1, col_rf2, col_rf3 = st.columns([2, 2, 1])
-            with col_rf1:
-                manual_rf_rate_screener = st.number_input(
-                    f"Risk-Free Rate (%)",
-                    min_value=0.0,
-                    max_value=20.0,
-                    value=auto_rf_rate_screener,
-                    step=0.1,
-                    key='manual_rf_screener',
-                    help=f"Auto: {auto_rf_rate_screener:.2f}% from ticker"
-                )
-            with col_rf2:
+            # Ticker input for custom bond/yield
+            col_t1, col_t2 = st.columns([4, 1])
+            with col_t1:
                 custom_rf_ticker_screener = st.text_input(
-                    "Ticker",
+                    "📊 Ticker for Risk-Free Rate",
                     value="NIFTYGS10YR.NS",
                     key='custom_rf_ticker_screener',
-                    help="Bond/yield ticker for RF rate"
+                    help="Yahoo Finance ticker. Default: NIFTYGS10YR.NS (India 10Y G-Sec)"
                 )
-            with col_rf3:
+            with col_t2:
                 st.write("")
-                if st.button("🔄", key='refresh_rf_screener'):
-                    ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
-                    st.session_state.cached_rf_rate_screener = get_risk_free_rate(ticker_to_use)
+                st.write("")
+                if st.button("🔄 Fetch", key='refresh_rf_screener', use_container_width=True):
+                    with st.spinner("Fetching..."):
+                        ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
+                        # Clear cache and fetch fresh
+                        get_risk_free_rate.clear()
+                        st.session_state.cached_rf_rate_screener = get_risk_free_rate(ticker_to_use)
                     st.rerun()
+            
+            # Rate input
+            manual_rf_rate_screener = st.number_input(
+                f"Risk-Free Rate (%) - Auto: {auto_rf_rate_screener:.2f}%",
+                min_value=0.0,
+                max_value=20.0,
+                value=auto_rf_rate_screener,
+                step=0.1,
+                key='manual_rf_screener',
+                help="Auto-fetched from ticker above. Override manually if needed."
+            )
             
             if abs(manual_rf_rate_screener - auto_rf_rate_screener) > 0.05:
                 st.info(f"💡 Using custom: {manual_rf_rate_screener:.2f}% (Auto: {auto_rf_rate_screener:.2f}%)")
