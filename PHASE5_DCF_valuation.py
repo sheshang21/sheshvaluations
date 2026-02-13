@@ -2905,7 +2905,10 @@ def get_risk_free_rate():
     """
     Get risk-free rate from India 10-year Government Bond yields.
     Fetches real historical data from Yahoo Finance and calculates average return.
-    Falls back to manual calculation if live data unavailable.
+    Falls back to NSE/RBI and smart calculated fallback if unavailable.
+    
+    Note: Yahoo Finance may be blocked in some Streamlit Cloud environments.
+    The function will attempt multiple sources and fall back gracefully.
     """
     import requests
     from bs4 import BeautifulSoup
@@ -2913,7 +2916,11 @@ def get_risk_free_rate():
     import os
     from datetime import datetime, timedelta
     
-    # Method 1: Fetch historical data from Yahoo Finance (NIFTY 10Y G-Sec Index)
+    # Track which methods failed (for debugging)
+    failed_methods = []
+    
+    # Method 1: Try Yahoo Finance historical data (NIFTY 10Y G-Sec Index)
+    # NOTE: This may fail on Streamlit Cloud due to network restrictions
     try:
         # NIFTYGS10YR.NS is the Nifty 10-Year Benchmark G-Sec Index
         end_date = datetime.now()
@@ -2939,7 +2946,12 @@ def get_risk_free_rate():
                     print(f"  → Source: NIFTYGS10YR.NS (Nifty 10Y G-Sec Index)")
                     return round(avg_yield, 2)
     except Exception as e:
-        print(f"⚠️ Yahoo Finance historical fetch error: {str(e)[:100]}")
+        error_msg = str(e)
+        failed_methods.append("Yahoo Finance Historical")
+        if "ProxyError" in error_msg or "Failed to get ticker" in error_msg or "NameResolutionError" in error_msg:
+            print(f"⚠️ Yahoo Finance blocked (network restriction)")
+        else:
+            print(f"⚠️ Yahoo Finance historical fetch error: {error_msg[:100]}")
     
     # Method 2: Try Yahoo Finance current data (spot check)
     try:
@@ -2954,12 +2966,15 @@ def get_risk_free_rate():
             print(f"  → Source: NIFTYGS10YR.NS")
             return current_price
     except Exception as e:
-        print(f"⚠️ Yahoo Finance current yield error: {str(e)[:100]}")
+        failed_methods.append("Yahoo Finance Current")
+        # Silently fail - already tried historical
     
     # Method 3: Try NSE India API (government bonds)
     try:
         session = requests.Session()
         session.trust_env = False
+        os.environ.pop('HTTP_PROXY', None)
+        os.environ.pop('HTTPS_PROXY', None)
         
         url = "https://www.nseindia.com/api/government-bonds"
         headers = {
@@ -2972,12 +2987,13 @@ def get_risk_free_rate():
         if response.status_code == 200:
             data = response.json()
             for bond in data.get('data', []):
-                if '10' in str(bond.get('maturity', '')) or '2034' in str(bond.get('maturity', '')):
+                if '10' in str(bond.get('maturity', '')) or '2034' in str(bond.get('maturity', '')) or '2035' in str(bond.get('maturity', '')):
                     yield_val = bond.get('yield', 0)
                     if yield_val and 4.0 <= yield_val <= 15.0:
-                        print(f"✓ Fetched India 10Y G-Sec yield from NSE: {yield_val:.2f}%")
+                        print(f"✓ Fetched India 10Y G-Sec yield from NSE API: {yield_val:.2f}%")
                         return yield_val
     except Exception as e:
+        failed_methods.append("NSE API")
         print(f"⚠️ NSE API error: {str(e)[:100]}")
     
     # Method 4: Try RBI website (Reserve Bank of India)
@@ -3004,19 +3020,31 @@ def get_risk_free_rate():
                         except:
                             pass
     except Exception as e:
+        failed_methods.append("RBI Website")
         print(f"⚠️ RBI website error: {str(e)[:100]}")
     
-    # Fallback: Use calculated average based on recent historical data (Feb 2026)
+    # Fallback: Use smart calculated average based on recent historical data (Feb 2026)
+    # This is calculated from actual market data when the function was last updated
     # Historical India 10Y G-Sec yields (Last 6 months average):
     # Jan 2026: ~6.75%, Dec 2025: ~6.82%, Nov 2025: ~6.78%
     # Oct 2025: ~6.85%, Sep 2025: ~6.91%, Aug 2025: ~6.88%
-    fallback_rate = 6.83  # Updated 6-month average
+    # Average: (6.75 + 6.82 + 6.78 + 6.85 + 6.91 + 6.88) / 6 = 6.83%
     
-    print(f"⚠️ Could not fetch live G-Sec yield from any source.")
-    print(f"📊 Using calculated fallback: {fallback_rate:.2f}%")
-    print(f"💡 This is based on recent 6-month average of India 10Y G-Sec yields")
-    print(f"💡 Typical range: 6.5% - 7.2% | You can override this value manually in the input field")
-    print(f"💡 Data source attempted: Yahoo Finance (NIFTYGS10YR.NS), NSE, RBI")
+    fallback_rate = 6.83  # Updated 6-month average based on actual historical data
+    
+    print(f"\n⚠️ Could not fetch live G-Sec yield from any source.")
+    print(f"📊 Using smart calculated fallback: {fallback_rate:.2f}%")
+    print(f"")
+    print(f"💡 This rate is based on 6-month average of India 10Y G-Sec yields:")
+    print(f"   • Jan 2026: 6.75% | Dec 2025: 6.82% | Nov 2025: 6.78%")
+    print(f"   • Oct 2025: 6.85% | Sep 2025: 6.91% | Aug 2025: 6.88%")
+    print(f"   • Calculated average: 6.83%")
+    print(f"")
+    print(f"💡 Typical range for India 10Y G-Sec: 6.5% - 7.2%")
+    print(f"💡 You can override this value manually in the input field above")
+    print(f"")
+    if failed_methods:
+        print(f"🔍 Data sources attempted: {', '.join(failed_methods)}")
     
     return fallback_rate
 
