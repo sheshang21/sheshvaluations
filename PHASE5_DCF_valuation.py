@@ -4654,7 +4654,8 @@ def project_financials(financials, wc_metrics, years, tax_rate,
 def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None):
     """Calculate WACC with proper beta calculation from peers"""
     # Cost of Equity (Ke)
-    rf = manual_rf_rate if manual_rf_rate is not None else get_risk_free_rate()
+    # ALWAYS use manual_rf_rate (passed from session state), never fetch
+    rf = manual_rf_rate if manual_rf_rate is not None else 6.83  # Fallback to default, DON'T fetch
     rm = get_market_return()
     
     # Calculate beta from peer tickers
@@ -4736,7 +4737,8 @@ def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=
     """
     
     # Cost of Equity (Ke) - Same as normal companies
-    rf = manual_rf_rate if manual_rf_rate is not None else get_risk_free_rate()
+    # ALWAYS use manual_rf_rate (passed from session state), never fetch
+    rf = manual_rf_rate if manual_rf_rate is not None else 6.83  # Fallback to default, DON'T fetch
     rm = get_market_return()
     
     beta = 1.0
