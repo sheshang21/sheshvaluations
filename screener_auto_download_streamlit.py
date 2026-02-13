@@ -203,14 +203,32 @@ def integrate_with_existing_upload_section(cookies_path="screener_cookies.pkl"):
                     temp_dir = Path("./temp_downloads")
                     temp_dir.mkdir(exist_ok=True)
                     
-                    downloader = ScreenerDownloader(cookies_path)
-                    template_path = downloader.auto_download_and_convert(
-                        company_symbol,
-                        output_dir=str(temp_dir),
-                        keep_original=False,
-                        use_consolidated=(data_type == "Consolidated"),
-                        use_id_url=use_id_url
-                    )
+                    # Enable debug output
+                    import sys
+                    from io import StringIO
+                    
+                    # Capture print statements
+                    old_stdout = sys.stdout
+                    sys.stdout = captured_output = StringIO()
+                    
+                    try:
+                        downloader = ScreenerDownloader(cookies_path)
+                        template_path = downloader.auto_download_and_convert(
+                            company_symbol,
+                            output_dir=str(temp_dir),
+                            keep_original=False,
+                            use_consolidated=(data_type == "Consolidated"),
+                            use_id_url=use_id_url
+                        )
+                    finally:
+                        # Restore stdout and get captured output
+                        sys.stdout = old_stdout
+                        debug_output = captured_output.getvalue()
+                    
+                    # Show debug output
+                    if debug_output:
+                        with st.expander("📋 Download Process Log", expanded=False):
+                            st.code(debug_output)
                     
                     if template_path and os.path.exists(template_path):
                         st.success(f"✅ Successfully fetched {data_type.lower()} data!")
@@ -223,12 +241,12 @@ def integrate_with_existing_upload_section(cookies_path="screener_cookies.pkl"):
                         uploaded_file = template_path
                     else:
                         st.error("❌ Failed to fetch data. Check company symbol and try again.")
+                        st.warning("⚠️ Expand 'Download Process Log' above to see what went wrong")
                         
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
                     import traceback
-                    with st.expander("🐛 Debug Info"):
-                        st.code(traceback.format_exc())
+                    st.code(traceback.format_exc())
         
         # Use previously downloaded file
         elif 'auto_downloaded_file' in st.session_state:
