@@ -4197,7 +4197,6 @@ def project_financials(financials, wc_metrics, years, tax_rate,
     # ============================================
     revenues = financials['revenue']
     num_years = len(revenues) - 1
-    historical_cagr = None  # Initialize to prevent UnboundLocalError
     
     if num_years > 0 and revenues[0] > 0 and revenues[-1] > 0:
         # CAGR: Start = OLDEST (last element), End = NEWEST (first element)
@@ -4213,13 +4212,17 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         elif historical_cagr > 150.0:
             # Cap extremely excessive growth - maximum 150%
             avg_growth = 150.0
-            cagr_value = historical_cagr if historical_cagr is not None else 0
-            st.warning(f"⚠️ Historical Revenue CAGR ({cagr_value:.1f}%) capped at 150%. Original: {cagr_value:.1f}%")
+            try:
+                st.warning(f"⚠️ Historical Revenue CAGR ({historical_cagr:.1f}%) capped at 150%. Original: {historical_cagr:.1f}%")
+            except:
+                pass
         else:
             avg_growth = historical_cagr
-            if historical_cagr is not None and historical_cagr > 50.0:
-                cagr_value = historical_cagr  # Store value to avoid scope issues
-                st.info(f"📊 High Growth Detected: Revenue CAGR = {cagr_value:.1f}% (using actual historical rate)")
+            if historical_cagr > 50.0:
+                try:
+                    st.info(f"📊 High Growth Detected: Revenue CAGR = {historical_cagr:.1f}% (using actual historical rate)")
+                except:
+                    pass
     else:
         avg_growth = 8.0  # Reasonable default for Indian economy
     
