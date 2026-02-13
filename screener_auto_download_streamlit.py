@@ -157,14 +157,14 @@ def integrate_with_existing_upload_section(cookies_path="screener_cookies.pkl"):
         
         st.success(f"✅ Cookies file found")
         
-        # Company symbol and data type selection
+        # Company symbol/ID and data type selection
         col1, col2, col3 = st.columns([3, 2, 1])
         
         with col1:
             company_symbol = st.text_input(
-                "Company Symbol",
-                placeholder="e.g., HONASA, RELIANCE, TCS",
-                help="Enter the company symbol from Screener URL",
+                "Company Symbol/ID",
+                placeholder="e.g., HONASA, RELIANCE, TCS or 1285886",
+                help="Enter the company symbol or ID number from Screener URL",
                 key="auto_dl_symbol"
             ).strip().upper()
         
@@ -180,10 +180,21 @@ def integrate_with_existing_upload_section(cookies_path="screener_cookies.pkl"):
             st.markdown("<br>", unsafe_allow_html=True)
             download_button = st.button("📥 Fetch & Analyze", type="primary", use_container_width=True)
         
+        # Checkbox for ID-based URL
+        use_id_url = st.checkbox(
+            "Company uses ID-based URL",
+            help="Check this if the company is in listing process and uses ID format: /company/id/NUMBER/",
+            key="use_id_url"
+        )
+        
         # Show URL
         if company_symbol:
-            url_suffix = "/consolidated/" if data_type == "Consolidated" else "/"
-            st.caption(f"Will download from: `https://www.screener.in/company/{company_symbol}{url_suffix}`")
+            if use_id_url:
+                url_suffix = "/consolidated/" if data_type == "Consolidated" else "/"
+                st.caption(f"Will download from: `https://www.screener.in/company/id/{company_symbol}{url_suffix}`")
+            else:
+                url_suffix = "/consolidated/" if data_type == "Consolidated" else "/"
+                st.caption(f"Will download from: `https://www.screener.in/company/{company_symbol}{url_suffix}`")
         
         # Download and process
         if download_button and company_symbol:
@@ -197,7 +208,8 @@ def integrate_with_existing_upload_section(cookies_path="screener_cookies.pkl"):
                         company_symbol,
                         output_dir=str(temp_dir),
                         keep_original=False,
-                        use_consolidated=(data_type == "Consolidated")
+                        use_consolidated=(data_type == "Consolidated"),
+                        use_id_url=use_id_url
                     )
                     
                     if template_path and os.path.exists(template_path):
