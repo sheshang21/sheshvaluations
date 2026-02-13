@@ -5877,13 +5877,41 @@ def main():
                 help="Compare stock price with financials (max 4 years)"
             )
         
-            col_fetch1, col_fetch2 = st.columns([3, 1])
+            # INPUT CHANGE DETECTION - Reset results if key inputs change
+            current_inputs_listed = {
+                'ticker': ticker,
+                'projection_years': projection_years,
+                'terminal_growth': terminal_growth,
+                'tax_rate': tax_rate,
+                'manual_discount': manual_discount_rate if manual_discount_rate > 0 else None
+            }
+            
+            # Check if inputs changed
+            if 'previous_inputs_listed' in st.session_state:
+                if st.session_state.previous_inputs_listed != current_inputs_listed:
+                    # Inputs changed - clear results
+                    st.session_state.show_results_listed = False
+            
+            # Store current inputs
+            st.session_state.previous_inputs_listed = current_inputs_listed
+        
+            st.markdown("---")
+            st.markdown("### 🎯 Ready to Run Valuation")
+            st.info("💡 **Click the button below to run valuation.** Results will appear only after clicking.")
+            
+            col_fetch1, col_fetch2, col_fetch3 = st.columns([2, 1, 1])
         
             with col_fetch1:
                 if st.button("🚀 Fetch & Analyze", type="primary", key="fetch_analyze_listed"):
                     st.session_state.show_results_listed = True
         
             with col_fetch2:
+                if st.button("🗑️ Clear Results", help="Clear current valuation results"):
+                    st.session_state.show_results_listed = False
+                    st.success("✅ Results cleared!")
+                    st.rerun()
+            
+            with col_fetch3:
                 if st.button("🔄 Reset Cache", help="Clear cached data to force fresh fetch"):
                     st.cache_data.clear()
                     st.success("✅ Cache cleared!")
@@ -8558,8 +8586,40 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 )
     
         if excel_file and company_name and num_shares:
-            if st.button("🚀 Run DCF Valuation", type="primary", key="run_dcf_btn"):
-                st.session_state.show_results_unlisted = True
+            # INPUT CHANGE DETECTION - Reset results if key inputs change
+            current_inputs_unlisted = {
+                'excel_file': excel_file.name if excel_file else None,
+                'company_name': company_name,
+                'num_shares': num_shares,
+                'terminal_growth': terminal_growth,
+                'tax_rate': tax_rate_input,
+                'wacc': wacc_input if wacc_input > 0 else None
+            }
+            
+            # Check if inputs changed
+            if 'previous_inputs_unlisted' in st.session_state:
+                if st.session_state.previous_inputs_unlisted != current_inputs_unlisted:
+                    # Inputs changed - clear results
+                    st.session_state.show_results_unlisted = False
+            
+            # Store current inputs
+            st.session_state.previous_inputs_unlisted = current_inputs_unlisted
+            
+            st.markdown("---")
+            st.markdown("### 🎯 Ready to Run Valuation")
+            st.info("💡 **Click the button below to run valuation.** Results will appear only after clicking.")
+            
+            col_run1, col_run2 = st.columns([2, 1])
+            
+            with col_run1:
+                if st.button("🚀 Run DCF Valuation", type="primary", key="run_dcf_btn"):
+                    st.session_state.show_results_unlisted = True
+            
+            with col_run2:
+                if st.button("🗑️ Clear Results", help="Clear current valuation results", key="clear_unlisted_results"):
+                    st.session_state.show_results_unlisted = False
+                    st.success("✅ Results cleared!")
+                    st.rerun()
         
             if st.session_state.get('show_results_unlisted', False):
                 with st.spinner("Processing..."):
@@ -9537,8 +9597,40 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 help="Compare stock price with financials (max 10 years)"
             )
             
-            if st.button("🚀 Run Screener Mode Valuation", type="primary", key="run_screener_dcf_btn"):
-                st.session_state.show_results_screener = True
+            # INPUT CHANGE DETECTION - Reset results if key inputs change
+            current_inputs_screener = {
+                'excel_file': excel_file_screener.name if excel_file_screener else None,
+                'company_name': company_name_screener,
+                'terminal_growth': terminal_growth_screener,
+                'tax_rate': tax_rate_screener,
+                'manual_discount': manual_discount_rate_screener if manual_discount_rate_screener > 0 else None,
+                'rev_growth': rev_growth_override_screener
+            }
+            
+            # Check if inputs changed
+            if 'previous_inputs_screener' in st.session_state:
+                if st.session_state.previous_inputs_screener != current_inputs_screener:
+                    # Inputs changed - clear results
+                    st.session_state.show_results_screener = False
+            
+            # Store current inputs
+            st.session_state.previous_inputs_screener = current_inputs_screener
+            
+            st.markdown("---")
+            st.markdown("### 🎯 Ready to Run Valuation")
+            st.info("💡 **Click the button below to run valuation.** Results will appear only after clicking.")
+            
+            col_run1, col_run2 = st.columns([2, 1])
+            
+            with col_run1:
+                if st.button("🚀 Run Screener Mode Valuation", type="primary", key="run_screener_dcf_btn"):
+                    st.session_state.show_results_screener = True
+            
+            with col_run2:
+                if st.button("🗑️ Clear Results", help="Clear current valuation results", key="clear_screener_results"):
+                    st.session_state.show_results_screener = False
+                    st.success("✅ Results cleared!")
+                    st.rerun()
             
             if st.session_state.get('show_results_screener', False):
                 with st.spinner("Processing Screener Excel..."):
