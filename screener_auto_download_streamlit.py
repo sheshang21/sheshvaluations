@@ -166,7 +166,7 @@ def integrate_with_existing_upload_section(cookies_path="screener_cookies.pkl"):
                 placeholder="e.g., HONASA, RELIANCE, TCS",
                 help="Enter the company symbol from Screener URL",
                 key="auto_dl_symbol"
-            ).strip().upper()
+            ).strip().lower()
         
         with col2:
             data_type = st.radio(
