@@ -5472,8 +5472,11 @@ def main():
             if st.button("🔄 Fetch", key='refresh_rf_listed_top'):
                 with st.spinner("Fetching from Yahoo Finance..."):
                     ticker_to_use = custom_rf_ticker_listed.strip() if custom_rf_ticker_listed.strip() else None
+                    st.write(f"DEBUG: Fetching from ticker: {ticker_to_use}")
                     fetched_rate = get_risk_free_rate(ticker_to_use)
+                    st.write(f"DEBUG: Fetched rate: {fetched_rate}")
                     st.session_state.cached_rf_rate_listed = fetched_rate
+                    st.write(f"DEBUG: Session state updated to: {st.session_state.cached_rf_rate_listed}")
                 st.success(f"✓ Updated to {fetched_rate:.2f}%")
                 st.rerun()
         
