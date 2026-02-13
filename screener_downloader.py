@@ -46,21 +46,26 @@ class ScreenerDownloader:
             for name, value in cookies.items():
                 self.session.cookies.set(name, value)
     
-    def download_excel(self, company_symbol, output_path=None, use_consolidated=False):
+    def download_excel(self, company_symbol, output_path=None, use_consolidated=False, use_id_url=False):
         """
         Download Excel file from Screener.in by clicking Export button
         
         Args:
-            company_symbol: Company symbol (e.g., 'HONASA')
+            company_symbol: Company symbol (e.g., 'HONASA') or ID number (e.g., '1285886')
             output_path: Where to save the file (optional)
             use_consolidated: Use consolidated financials (default: False)
+            use_id_url: Use ID-based URL format /company/id/NUMBER/ (default: False)
             
         Returns:
             str: Path to downloaded file or None if failed
         """
-        # Construct URL based on consolidated flag
-        url_suffix = "consolidated/" if use_consolidated else ""
-        company_url = f"https://www.screener.in/company/{company_symbol}/{url_suffix}"
+        # Construct URL based on flags
+        if use_id_url:
+            url_suffix = "consolidated/" if use_consolidated else ""
+            company_url = f"https://www.screener.in/company/id/{company_symbol}/{url_suffix}"
+        else:
+            url_suffix = "consolidated/" if use_consolidated else ""
+            company_url = f"https://www.screener.in/company/{company_symbol}/{url_suffix}"
         
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -112,7 +117,7 @@ class ScreenerDownloader:
             
             post_data = {
                 'csrfmiddlewaretoken': csrf_token,
-                'next': f'/company/{company_symbol}/{url_suffix}'
+                'next': f'/company/id/{company_symbol}/{url_suffix}' if use_id_url else f'/company/{company_symbol}/{url_suffix}'
             }
             
             print(f"Downloading from: {export_url}")
@@ -460,15 +465,16 @@ class ScreenerDownloader:
         """Legacy method - no longer used"""
         pass
     
-    def auto_download_and_convert(self, company_symbol, output_dir=".", keep_original=False, use_consolidated=False):
+    def auto_download_and_convert(self, company_symbol, output_dir=".", keep_original=False, use_consolidated=False, use_id_url=False):
         """
         Complete workflow: download, clean, convert to ready-to-use format
         
         Args:
-            company_symbol: Company symbol (e.g., 'HONASA')
+            company_symbol: Company symbol (e.g., 'HONASA') or ID number (e.g., '1285886')
             output_dir: Directory for output files
             keep_original: Keep original downloaded Excel
             use_consolidated: Use consolidated financials
+            use_id_url: Use ID-based URL format /company/id/NUMBER/
             
         Returns:
             str: Path to ready-to-use Excel file or None if failed
@@ -478,7 +484,7 @@ class ScreenerDownloader:
             
             # Download Excel
             original_path = os.path.join(output_dir, f"{company_symbol}_original.xlsx")
-            downloaded_path = self.download_excel(company_symbol, original_path, use_consolidated)
+            downloaded_path = self.download_excel(company_symbol, original_path, use_consolidated, use_id_url)
             
             if not downloaded_path:
                 return None
