@@ -1148,7 +1148,7 @@ def display_screener_rim_results(rim_results):
     
     st.markdown("---")
     
-    # SECTION 3: YEAR-BY-YEAR PROJECTIONS
+    # SECTION 3: YEAR-BY-YEAR PROJECTIONS WITH VISUALS
     st.markdown("### 📈 Year-by-Year Residual Income Projections")
     
     # Get projection details if available
@@ -1156,15 +1156,27 @@ def display_screener_rim_results(rim_results):
     sum_pv_ri = rim_results.get('sum_pv_ri', 0)
     terminal_ri_pv = rim_results.get('terminal_ri_pv', 0)
     
-    if projections:
+    if projections and len(projections) > 0:
         # Create detailed projection table
         proj_data = []
+        years_list = []
+        bv_list = []
+        ni_list = []
+        ri_list = []
+        pv_ri_list = []
+        
         for proj in projections:
             year = proj.get('year', 0)
             bv_year = proj.get('book_value', 0) / 100000  # Convert to Lacs
             ni_year = proj.get('net_income', 0) / 100000  # Convert to Lacs
             ri_year = proj.get('residual_income', 0) / 100000  # Convert to Lacs
             pv_ri_year = proj.get('pv_ri', 0) / 100000  # Convert to Lacs
+            
+            years_list.append(f"Year {year}")
+            bv_list.append(bv_year)
+            ni_list.append(ni_year)
+            ri_list.append(ri_year)
+            pv_ri_list.append(pv_ri_year)
             
             proj_data.append({
                 'Year': f"Year {year}",
@@ -1176,8 +1188,67 @@ def display_screener_rim_results(rim_results):
                 'PV of RI (₹ Lacs)': f"{pv_ri_year:.2f}"
             })
         
+        # Display table
         proj_df = pd.DataFrame(proj_data)
-        st.dataframe(proj_df, use_container_width=True)
+        st.dataframe(proj_df, use_container_width=True, hide_index=True)
+        
+        # VISUAL 1: Residual Income by Year (Bar Chart)
+        st.markdown("#### 📊 Visual: Residual Income by Year")
+        
+        import plotly.graph_objects as go
+        
+        fig_ri = go.Figure()
+        
+        # Residual Income bars
+        colors = ['#06A77D' if ri > 0 else '#E63946' for ri in ri_list]
+        fig_ri.add_trace(go.Bar(
+            x=years_list,
+            y=ri_list,
+            name='Residual Income',
+            marker_color=colors,
+            text=[f"₹{ri:.2f}" for ri in ri_list],
+            textposition='outside'
+        ))
+        
+        fig_ri.update_layout(
+            title="Residual Income by Year (₹ Lacs)",
+            xaxis_title="Year",
+            yaxis_title="Residual Income (₹ Lacs)",
+            height=400,
+            showlegend=False,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig_ri, use_container_width=True)
+        
+        # VISUAL 2: Present Value Contribution (Waterfall)
+        st.markdown("#### 💰 Visual: Present Value Contributions")
+        
+        fig_pv = go.Figure()
+        
+        fig_pv.add_trace(go.Bar(
+            x=years_list,
+            y=pv_ri_list,
+            name='PV of RI',
+            marker_color='#2E86AB',
+            text=[f"₹{pv:.2f}" for pv in pv_ri_list],
+            textposition='outside'
+        ))
+        
+        fig_pv.update_layout(
+            title="Present Value Contribution by Year (₹ Lacs)",
+            xaxis_title="Year",
+            yaxis_title="PV of RI (₹ Lacs)",
+            height=400,
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_pv, use_container_width=True)
+        
+    else:
+        st.warning("⚠️ No year-by-year projection data available. This may indicate an issue with the RIM calculation.")
+        st.info("Projection data structure:")
+        st.json(rim_results)
         
         # Show ACTUAL calculations for ALL years
         st.markdown("### 🔢 Detailed Calculations for Each Year")
@@ -1267,13 +1338,64 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
     
     st.markdown("---")
     
-    # SECTION 4: VALUE BUILD-UP
+    # SECTION 4: VALUE BUILD-UP WITH VISUALS
     st.markdown("### 💰 Fair Value Build-Up")
     
     bv_per_share = bv * 100000 / num_shares
     pv_ri_per_share = sum_pv_ri / num_shares
     tv_per_share = terminal_ri_pv / num_shares
     
+    # VISUAL: Waterfall Chart for Value Build-up
+    st.markdown("#### 📊 Visual: Fair Value Waterfall")
+    
+    import plotly.graph_objects as go
+    
+    fig_waterfall = go.Figure(go.Waterfall(
+        name="Fair Value",
+        orientation="v",
+        measure=["absolute", "relative", "relative", "total"],
+        x=["Book Value<br>per Share", "PV of RI<br>(Years 1-5)", "Terminal<br>Value", "Fair Value<br>per Share"],
+        textposition="outside",
+        text=[f"₹{bv_per_share:.2f}", f"₹{pv_ri_per_share:.2f}", f"₹{tv_per_share:.2f}", f"₹{value_per_share:.2f}"],
+        y=[bv_per_share, pv_ri_per_share, tv_per_share, value_per_share],
+        connector={"line": {"color": "rgb(63, 63, 63)"}},
+        decreasing={"marker": {"color": "#E63946"}},
+        increasing={"marker": {"color": "#06A77D"}},
+        totals={"marker": {"color": "#2E86AB"}}
+    ))
+    
+    fig_waterfall.update_layout(
+        title="Fair Value Build-Up (₹ per Share)",
+        showlegend=False,
+        height=500,
+        yaxis_title="Value (₹)"
+    )
+    
+    st.plotly_chart(fig_waterfall, use_container_width=True)
+    
+    # VISUAL: Pie Chart for Value Composition
+    st.markdown("#### 🥧 Visual: Value Composition")
+    
+    total_value = bv_per_share + pv_ri_per_share + tv_per_share
+    
+    if total_value > 0:
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=['Book Value', 'PV of RI (5Y)', 'Terminal Value'],
+            values=[bv_per_share, pv_ri_per_share, tv_per_share],
+            marker=dict(colors=['#2E86AB', '#06A77D', '#F4D35E']),
+            textinfo='label+percent+value',
+            texttemplate='<b>%{label}</b><br>%{percent}<br>₹%{value:.2f}',
+            hovertemplate='<b>%{label}</b><br>₹%{value:.2f}<br>%{percent}<extra></extra>'
+        )])
+        
+        fig_pie.update_layout(
+            title="Fair Value Composition (₹ per Share)",
+            height=500
+        )
+        
+        st.plotly_chart(fig_pie, use_container_width=True)
+    
+    # Detailed breakdown in columns
     col_buildup1, col_buildup2 = st.columns([2, 1])
     
     with col_buildup1:
