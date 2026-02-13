@@ -2901,152 +2901,41 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         st.warning(f"Could not calculate beta for {ticker}: {str(e)}")
         return 1.0
 
-def get_risk_free_rate():
+def get_risk_free_rate(custom_ticker=None):
     """
-    Get risk-free rate from India 10-year Government Bond yields.
-    Fetches real historical data from Yahoo Finance and calculates average return.
-    Falls back to NSE/RBI and smart calculated fallback if unavailable.
-    
-    Note: Yahoo Finance may be blocked in some Streamlit Cloud environments.
-    The function will attempt multiple sources and fall back gracefully.
+    Get risk-free rate from India 10-year Government Bond yields using Yahoo Finance.
+    Uses NIFTYGS10YR.NS (Nifty 10Y G-Sec Index) by default.
     """
-    import requests
-    from bs4 import BeautifulSoup
-    import re
-    import os
     from datetime import datetime, timedelta
     
-    # Track which methods failed (for debugging)
-    failed_methods = []
+    ticker = custom_ticker if custom_ticker else 'NIFTYGS10YR.NS'
     
-    # Method 1: Try Yahoo Finance historical data (NIFTY 10Y G-Sec Index)
-    # NOTE: This may fail on Streamlit Cloud due to network restrictions
     try:
-        # NIFTYGS10YR.NS is the Nifty 10-Year Benchmark G-Sec Index
+        # Fetch historical data from Yahoo Finance
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=90)  # Last 3 months
+        start_date = end_date - timedelta(days=365*10)  # 10 years max
         
-        gsec_data = yf.download('NIFTYGS10YR.NS', start=start_date, end=end_date, progress=False)
+        gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
         
         if not gsec_data.empty and len(gsec_data) >= 5:
-            # The 'Close' price represents the yield for this index
             yields = gsec_data['Close'].dropna().tolist()
             
             if yields and len(yields) >= 5:
-                avg_yield = sum(yields) / len(yields)
+                # Use last 90 days for average
+                recent_yields = yields[-min(90, len(yields)):]
+                avg_yield = sum(recent_yields) / len(recent_yields)
                 latest_yield = yields[-1]
-                min_yield = min(yields)
-                max_yield = max(yields)
                 
-                # Validate yields are in reasonable range
                 if 4.0 <= avg_yield <= 15.0:
-                    print(f"✓ Fetched India 10Y G-Sec historical data from Yahoo Finance")
-                    print(f"  → Average of last {len(yields)} trading days: {avg_yield:.2f}%")
-                    print(f"  → Latest: {latest_yield:.2f}% | Range: {min_yield:.2f}% - {max_yield:.2f}%")
-                    print(f"  → Source: NIFTYGS10YR.NS (Nifty 10Y G-Sec Index)")
+                    print(f"✓ Fetched {ticker}: Avg {avg_yield:.2f}% (Last: {latest_yield:.2f}%)")
                     return round(avg_yield, 2)
     except Exception as e:
-        error_msg = str(e)
-        failed_methods.append("Yahoo Finance Historical")
-        if "ProxyError" in error_msg or "Failed to get ticker" in error_msg or "NameResolutionError" in error_msg:
-            print(f"⚠️ Yahoo Finance blocked (network restriction)")
-        else:
-            print(f"⚠️ Yahoo Finance historical fetch error: {error_msg[:100]}")
+        print(f"⚠️ Yahoo Finance error: {str(e)[:100]}")
     
-    # Method 2: Try Yahoo Finance current data (spot check)
-    try:
-        gsec = get_cached_ticker("NIFTYGS10YR.NS")
-        info = gsec.info
-        
-        # Try to get current price/yield
-        current_price = info.get('regularMarketPrice') or info.get('previousClose')
-        
-        if current_price and 4.0 <= current_price <= 15.0:
-            print(f"✓ Fetched current India 10Y G-Sec yield from Yahoo Finance: {current_price:.2f}%")
-            print(f"  → Source: NIFTYGS10YR.NS")
-            return current_price
-    except Exception as e:
-        failed_methods.append("Yahoo Finance Current")
-        # Silently fail - already tried historical
-    
-    # Method 3: Try NSE India API (government bonds)
-    try:
-        session = requests.Session()
-        session.trust_env = False
-        os.environ.pop('HTTP_PROXY', None)
-        os.environ.pop('HTTPS_PROXY', None)
-        
-        url = "https://www.nseindia.com/api/government-bonds"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9'
-        }
-        
-        response = session.get(url, headers=headers, timeout=10, verify=False)
-        if response.status_code == 200:
-            data = response.json()
-            for bond in data.get('data', []):
-                if '10' in str(bond.get('maturity', '')) or '2034' in str(bond.get('maturity', '')) or '2035' in str(bond.get('maturity', '')):
-                    yield_val = bond.get('yield', 0)
-                    if yield_val and 4.0 <= yield_val <= 15.0:
-                        print(f"✓ Fetched India 10Y G-Sec yield from NSE API: {yield_val:.2f}%")
-                        return yield_val
-    except Exception as e:
-        failed_methods.append("NSE API")
-        print(f"⚠️ NSE API error: {str(e)[:100]}")
-    
-    # Method 4: Try RBI website (Reserve Bank of India)
-    try:
-        session = requests.Session()
-        session.trust_env = False
-        
-        url = "https://www.rbi.org.in/Scripts/BS_ViewMasRates.aspx"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        
-        response = session.get(url, headers=headers, timeout=10, verify=False)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            for row in soup.find_all('tr'):
-                cells = row.find_all('td')
-                if len(cells) >= 2:
-                    if '10' in cells[0].get_text():
-                        try:
-                            yield_text = cells[1].get_text(strip=True)
-                            yield_val = float(re.search(r'(\d+\.?\d*)', yield_text).group(1))
-                            if 4.0 <= yield_val <= 15.0:
-                                print(f"✓ Fetched India 10Y G-Sec yield from RBI: {yield_val:.2f}%")
-                                return yield_val
-                        except:
-                            pass
-    except Exception as e:
-        failed_methods.append("RBI Website")
-        print(f"⚠️ RBI website error: {str(e)[:100]}")
-    
-    # Fallback: Use smart calculated average based on recent historical data (Feb 2026)
-    # This is calculated from actual market data when the function was last updated
-    # Historical India 10Y G-Sec yields (Last 6 months average):
-    # Jan 2026: ~6.75%, Dec 2025: ~6.82%, Nov 2025: ~6.78%
-    # Oct 2025: ~6.85%, Sep 2025: ~6.91%, Aug 2025: ~6.88%
-    # Average: (6.75 + 6.82 + 6.78 + 6.85 + 6.91 + 6.88) / 6 = 6.83%
-    
-    fallback_rate = 6.83  # Updated 6-month average based on actual historical data
-    
-    print(f"\n⚠️ Could not fetch live G-Sec yield from any source.")
-    print(f"📊 Using smart calculated fallback: {fallback_rate:.2f}%")
-    print(f"")
-    print(f"💡 This rate is based on 6-month average of India 10Y G-Sec yields:")
-    print(f"   • Jan 2026: 6.75% | Dec 2025: 6.82% | Nov 2025: 6.78%")
-    print(f"   • Oct 2025: 6.85% | Sep 2025: 6.91% | Aug 2025: 6.88%")
-    print(f"   • Calculated average: 6.83%")
-    print(f"")
-    print(f"💡 Typical range for India 10Y G-Sec: 6.5% - 7.2%")
-    print(f"💡 You can override this value manually in the input field above")
-    print(f"")
-    if failed_methods:
-        print(f"🔍 Data sources attempted: {', '.join(failed_methods)}")
-    
-    return fallback_rate
+    # Fallback
+    fallback = 6.83
+    print(f"⚠️ Using fallback: {fallback}%")
+    return fallback
 
 def get_market_return():
     """Calculate market return from Sensex historical data"""
@@ -5779,20 +5668,43 @@ def main():
             tax_rate = st.number_input("Tax Rate (%):", min_value=0.0, max_value=100.0, value=25.0, step=0.5, key='listed_tax')
             terminal_growth = st.number_input("Terminal Growth Rate (%):", min_value=0.0, max_value=10.0, value=4.0, step=0.5, key='listed_tg')
             
-            # Risk-free rate override
+            # Risk-free rate override (CACHED to avoid refetching on every interaction)
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
-            auto_rf_rate = get_risk_free_rate()
-            manual_rf_rate = st.number_input(
-                f"Risk-Free Rate (%) - Auto: {auto_rf_rate:.2f}%",
-                min_value=0.0,
-                max_value=20.0,
-                value=auto_rf_rate,
-                step=0.1,
-                key='manual_rf_listed',
-                help="📊 Automatically fetched from India 10Y G-Sec. You can override if needed."
-            )
+            
+            # Only fetch once per session
+            if 'cached_rf_rate_listed' not in st.session_state:
+                st.session_state.cached_rf_rate_listed = get_risk_free_rate()
+            
+            auto_rf_rate = st.session_state.cached_rf_rate_listed
+            
+            # Add custom ticker and refresh button
+            col_rf1, col_rf2, col_rf3 = st.columns([2, 2, 1])
+            with col_rf1:
+                manual_rf_rate = st.number_input(
+                    f"Risk-Free Rate (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=auto_rf_rate,
+                    step=0.1,
+                    key='manual_rf_listed',
+                    help=f"Auto: {auto_rf_rate:.2f}% from ticker"
+                )
+            with col_rf2:
+                custom_rf_ticker = st.text_input(
+                    "Ticker",
+                    value="NIFTYGS10YR.NS",
+                    key='custom_rf_ticker_listed',
+                    help="Bond/yield ticker for RF rate"
+                )
+            with col_rf3:
+                st.write("")
+                if st.button("🔄", key='refresh_rf_listed'):
+                    ticker_to_use = custom_rf_ticker.strip() if custom_rf_ticker.strip() else None
+                    st.session_state.cached_rf_rate_listed = get_risk_free_rate(ticker_to_use)
+                    st.rerun()
+            
             if abs(manual_rf_rate - auto_rf_rate) > 0.05:
-                st.info(f"💡 Using custom risk-free rate: {manual_rf_rate:.2f}% (Auto was {auto_rf_rate:.2f}%)")
+                st.info(f"💡 Using custom: {manual_rf_rate:.2f}% (Auto: {auto_rf_rate:.2f}%)")
         
             # Manual discount rate override
             st.markdown("**💰 Discount Rate Override (Optional)**")
@@ -9631,20 +9543,43 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 help="Long-term perpetual growth rate. Should be <= long-term GDP growth + inflation (typically 4-8% for India)"
             )
             
-            # Risk-free rate override
+            # Risk-free rate override (CACHED to avoid refetching on every interaction)
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
-            auto_rf_rate_screener = get_risk_free_rate()
-            manual_rf_rate_screener = st.number_input(
-                f"Risk-Free Rate (%) - Auto: {auto_rf_rate_screener:.2f}%",
-                min_value=0.0,
-                max_value=20.0,
-                value=auto_rf_rate_screener,
-                step=0.1,
-                key='manual_rf_screener',
-                help="📊 Automatically fetched from India 10Y G-Sec. You can override if needed."
-            )
+            
+            # Only fetch once per session
+            if 'cached_rf_rate_screener' not in st.session_state:
+                st.session_state.cached_rf_rate_screener = get_risk_free_rate()
+            
+            auto_rf_rate_screener = st.session_state.cached_rf_rate_screener
+            
+            # Add custom ticker and refresh button
+            col_rf1, col_rf2, col_rf3 = st.columns([2, 2, 1])
+            with col_rf1:
+                manual_rf_rate_screener = st.number_input(
+                    f"Risk-Free Rate (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=auto_rf_rate_screener,
+                    step=0.1,
+                    key='manual_rf_screener',
+                    help=f"Auto: {auto_rf_rate_screener:.2f}% from ticker"
+                )
+            with col_rf2:
+                custom_rf_ticker_screener = st.text_input(
+                    "Ticker",
+                    value="NIFTYGS10YR.NS",
+                    key='custom_rf_ticker_screener',
+                    help="Bond/yield ticker for RF rate"
+                )
+            with col_rf3:
+                st.write("")
+                if st.button("🔄", key='refresh_rf_screener'):
+                    ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
+                    st.session_state.cached_rf_rate_screener = get_risk_free_rate(ticker_to_use)
+                    st.rerun()
+            
             if abs(manual_rf_rate_screener - auto_rf_rate_screener) > 0.05:
-                st.info(f"💡 Using custom risk-free rate: {manual_rf_rate_screener:.2f}% (Auto was {auto_rf_rate_screener:.2f}%)")
+                st.info(f"💡 Using custom: {manual_rf_rate_screener:.2f}% (Auto: {auto_rf_rate_screener:.2f}%)")
             
             # Manual discount rate override
             st.markdown("---")
