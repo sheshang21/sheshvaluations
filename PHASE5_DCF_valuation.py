@@ -1776,7 +1776,7 @@ def calculate_residual_income_model(financials, shares, cost_of_equity, terminal
             num_years = len(equities) - 1
             # Start = oldest (last), End = newest (first)
             bv_growth = ((equities[0] / equities[-1]) ** (1 / num_years) - 1) * 100
-            bv_growth = max(5, min(bv_growth, 20))  # Clamp between 5% and 20%
+            bv_growth = max(-50, min(bv_growth, 150))  # Allow up to 150% growth
         else:
             bv_growth = 10.0  # Default
         
@@ -1902,7 +1902,7 @@ def calculate_dividend_discount_model(financials, shares, cost_of_equity, ticker
                             num_years = len(actual_dividends) - 1
                             # Start = oldest (last), End = newest (first)
                             div_growth_calculated = ((actual_dividends[0] / actual_dividends[-1]) ** (1 / num_years) - 1) * 100
-                            div_growth_calculated = max(-10, min(div_growth_calculated, 20))
+                            div_growth_calculated = max(-50, min(div_growth_calculated, 150))  # Allow up to 150%
                         
                         # Calculate payout ratio from actual data - USE NEWEST nopat (index 0)
                         latest_div = actual_dividends[-1] if actual_dividends else 0
@@ -2845,7 +2845,7 @@ def get_market_return():
             if start_price > 0 and num_years > 0:
                 cagr = ((end_price / start_price) ** (1 / num_years) - 1) * 100
                 st.info(f"📊 Sensex CAGR (last {num_years:.1f} years): {cagr:.2f}%")
-                return max(8.0, min(cagr, 25.0))  # Clamp between 8% and 25%
+                return max(8.0, min(cagr, 150.0))  # Clamp between 8% and 150%
     except Exception as e:
         st.warning(f"Could not fetch Sensex data: {str(e)}")
     
@@ -3913,9 +3913,13 @@ def calculate_historical_capex_ratio(financials):
             # Calculate as % of revenue
             capex_ratio = (capex / revenue) * 100
             
-            # Sanity check: CapEx should typically be 2-15% of revenue for most companies
-            # Cap at reasonable limits
-            capex_ratio = max(2.0, min(capex_ratio, 20.0))
+            # Sanity check: Flag unusually high CapEx ratios but allow them
+            if capex_ratio > 150.0:
+                capex_ratio = 150.0  # Maximum cap at 150%
+            elif capex_ratio > 50.0:
+                # Just log high CapEx, don't cap it
+                pass
+            
             capex_ratios.append(capex_ratio)
     
     # Calculate average
@@ -4067,7 +4071,7 @@ def project_financials_bank(financials, years, tax_rate, car_ratio=14.0, rwa_per
     if len(revenue_history) >= 2 and revenue_history[-1] > 0 and revenue_history[0] > 0:
         num_years_hist = len(revenue_history) - 1
         revenue_growth = ((revenue_history[0] / revenue_history[-1]) ** (1/num_years_hist) - 1) * 100
-        revenue_growth = max(8, min(revenue_growth, 18))  # Cap between 8-18% for banks
+        revenue_growth = max(5, min(revenue_growth, 150))  # Cap between 5-150% for banks
     else:
         revenue_growth = 12.0  # Default Indian bank growth
     
@@ -4205,11 +4209,14 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         if historical_cagr < 4.0:
             # Blend historical with GDP floor (7% for India)
             avg_growth = (historical_cagr * 0.6) + (7.0 * 0.4)
-        elif historical_cagr > 25.0:
-            # Cap excessive growth - unlikely sustainable
-            avg_growth = min(historical_cagr, 20.0)
+        elif historical_cagr > 150.0:
+            # Cap extremely excessive growth - maximum 150%
+            avg_growth = 150.0
+            st.warning(f"⚠️ Historical Revenue CAGR ({historical_cagr:.1f}%) capped at 150%. Original: {historical_cagr:.1f}%")
         else:
             avg_growth = historical_cagr
+            if historical_cagr > 50.0:
+                st.info(f"📊 High Growth Detected: Revenue CAGR = {historical_cagr:.1f}% (using actual historical rate)")
     else:
         avg_growth = 8.0  # Reasonable default for Indian economy
     
@@ -8950,11 +8957,26 @@ def main():
             terminal_growth_screener = st.number_input(
                 "Terminal Growth Rate (%):", 
                 min_value=0.0, 
-                max_value=10.0, 
+                max_value=20.0, 
                 value=4.0, 
                 step=0.5,
-                key='screener_terminal'
+                key='screener_terminal',
+                help="Long-term perpetual growth rate. Should be <= long-term GDP growth + inflation (typically 4-8% for India)"
             )
+            
+            # Manual discount rate override
+            st.markdown("---")
+            manual_discount_rate_screener = st.number_input(
+                "Manual Discount Rate Override (%):",
+                min_value=0.0,
+                max_value=50.0,
+                value=0.0,
+                step=0.5,
+                key='manual_discount_screener',
+                help="⚠️ Override WACC calculation. Leave at 0 to use auto-calculated WACC. Use this if you want to use a specific discount rate instead of WACC."
+            )
+            if manual_discount_rate_screener > 0:
+                st.info(f"💡 Using manual discount rate: {manual_discount_rate_screener:.2f}% (Overriding WACC)")
             
             # Valuation models to run
             st.markdown("**🎯 Valuation Models**")
@@ -8971,9 +8993,9 @@ def main():
             with col1:
                 rev_growth_override_screener = st.number_input(
                     "Revenue Growth (%/year)", 
-                    min_value=0.0, max_value=100.0, value=0.0, step=0.5,
+                    min_value=0.0, max_value=200.0, value=0.0, step=0.5,
                     key='screener_rev_growth',
-                    help="0 = Auto from historical CAGR"
+                    help="0 = Auto from historical CAGR. Override to use custom growth rate."
                 )
             with col2:
                 opex_margin_override_screener = st.number_input(
@@ -8995,9 +9017,9 @@ def main():
             with col4:
                 capex_ratio_override_screener = st.number_input(
                     "CapEx/Revenue (%)", 
-                    min_value=0.0, max_value=50.0, value=0.0, step=0.5,
+                    min_value=0.0, max_value=200.0, value=0.0, step=0.5,
                     key='screener_capex_ratio',
-                    help="0 = Auto from historical average"
+                    help="0 = Auto from historical average. Override for custom CapEx assumptions."
                 )
             with col5:
                 depreciation_rate_override_screener = st.number_input(
@@ -9067,7 +9089,7 @@ def main():
                 ddm_dividend_growth_screener = st.number_input(
                     "Dividend Growth Rate (%)",
                     min_value=0.0,
-                    max_value=30.0,
+                    max_value=200.0,
                     value=0.0,
                     step=0.5,
                     key='screener_ddm_div_growth',
@@ -9125,7 +9147,7 @@ def main():
                 rim_terminal_growth_screener = st.number_input(
                     "Terminal Growth (%)",
                     min_value=0.0,
-                    max_value=10.0,
+                    max_value=20.0,
                     value=0.0,
                     step=0.5,
                     key='screener_rim_terminal_growth',
@@ -9320,7 +9342,8 @@ def main():
                         
                         # Calculate DCF
                         valuation, error = calculate_dcf_valuation(
-                            projections_screener, wacc_details, terminal_growth_screener, num_shares_screener, cash_balance
+                            projections_screener, wacc_details, terminal_growth_screener, num_shares_screener, cash_balance,
+                            manual_discount_rate=manual_discount_rate_screener if manual_discount_rate_screener > 0 else None
                         )
                         
                         if error:
