@@ -5454,6 +5454,9 @@ def main():
         st.markdown("### 🏛️ Risk-Free Rate Configuration")
         st.info("💡 Default: 6.83%. Enter a Yahoo Finance ticker below and click Fetch to update from live data.")
         
+        # Get current value from session state
+        current_rf_rate = st.session_state.get('cached_rf_rate_listed', 6.83)
+        
         rf_col1, rf_col2, rf_col3 = st.columns([3, 2, 1])
         with rf_col1:
             custom_rf_ticker_listed = st.text_input(
@@ -5463,17 +5466,17 @@ def main():
                 help="Default: NIFTYGS10YR.NS (India 10Y G-Sec Index)"
             )
         with rf_col2:
-            auto_rf_rate_listed = st.session_state.get('cached_rf_rate_listed', 6.83)
-            st.metric("Current RF Rate", f"{auto_rf_rate_listed:.2f}%")
+            st.metric("Current RF Rate", f"{current_rf_rate:.2f}%")
         with rf_col3:
             st.write("")
             st.write("")
             if st.button("🔄 Fetch", key='refresh_rf_listed_top'):
-                with st.spinner("Fetching..."):
+                with st.spinner("Fetching from Yahoo Finance..."):
                     ticker_to_use = custom_rf_ticker_listed.strip() if custom_rf_ticker_listed.strip() else None
                     get_risk_free_rate.clear()
-                    st.session_state.cached_rf_rate_listed = get_risk_free_rate(ticker_to_use)
-                st.success(f"✓ Updated to {st.session_state.cached_rf_rate_listed:.2f}%")
+                    fetched_rate = get_risk_free_rate(ticker_to_use)
+                    st.session_state.cached_rf_rate_listed = fetched_rate
+                st.success(f"✓ Updated to {fetched_rate:.2f}%")
                 st.rerun()
         
         st.markdown("---")
@@ -9388,6 +9391,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         st.markdown("### 🏛️ Risk-Free Rate Configuration")
         st.info("💡 Default: 6.83%. Enter a Yahoo Finance ticker below and click Fetch to update from live data.")
         
+        # Get current value from session state
+        current_rf_rate_screener = st.session_state.get('cached_rf_rate_screener', 6.83)
+        
         rf_col1, rf_col2, rf_col3 = st.columns([3, 2, 1])
         with rf_col1:
             custom_rf_ticker_screener = st.text_input(
@@ -9397,17 +9403,17 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 help="Default: NIFTYGS10YR.NS (India 10Y G-Sec Index)"
             )
         with rf_col2:
-            auto_rf_rate_screener = st.session_state.get('cached_rf_rate_screener', 6.83)
-            st.metric("Current RF Rate", f"{auto_rf_rate_screener:.2f}%")
+            st.metric("Current RF Rate", f"{current_rf_rate_screener:.2f}%")
         with rf_col3:
             st.write("")
             st.write("")
             if st.button("🔄 Fetch", key='refresh_rf_screener_top'):
-                with st.spinner("Fetching..."):
+                with st.spinner("Fetching from Yahoo Finance..."):
                     ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
                     get_risk_free_rate.clear()
-                    st.session_state.cached_rf_rate_screener = get_risk_free_rate(ticker_to_use)
-                st.success(f"✓ Updated to {st.session_state.cached_rf_rate_screener:.2f}%")
+                    fetched_rate = get_risk_free_rate(ticker_to_use)
+                    st.session_state.cached_rf_rate_screener = fetched_rate
+                st.success(f"✓ Updated to {fetched_rate:.2f}%")
                 st.rerun()
         
         st.markdown("---")
