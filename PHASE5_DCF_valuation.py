@@ -9599,7 +9599,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             
             # INPUT CHANGE DETECTION - Reset results if key inputs change
             current_inputs_screener = {
-                'excel_file': excel_file_screener.name if excel_file_screener else None,
+                'excel_file': excel_file_screener.name if excel_file_screener and hasattr(excel_file_screener, 'name') else None,
                 'company_name': company_name_screener,
                 'terminal_growth': terminal_growth_screener,
                 'tax_rate': tax_rate_screener,
