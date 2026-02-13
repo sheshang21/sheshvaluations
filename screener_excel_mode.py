@@ -1228,7 +1228,7 @@ def display_screener_rim_results(rim_results):
             hovermode='x unified'
         )
         
-        st.plotly_chart(fig_ri, use_container_width=True)
+        st.plotly_chart(fig_ri, use_container_width=True, key='rim_ri_chart')
         
         # VISUAL 2: Present Value Contribution
         st.markdown("#### 💰 Visual: Present Value Contributions")
@@ -1252,7 +1252,7 @@ def display_screener_rim_results(rim_results):
             showlegend=False
         )
         
-        st.plotly_chart(fig_pv, use_container_width=True)
+        st.plotly_chart(fig_pv, use_container_width=True, key='rim_pv_chart')
         
     else:
         st.warning("⚠️ No year-by-year projection data available. Check RIM input parameters.")
@@ -1378,7 +1378,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
         yaxis_title="Value (₹)"
     )
     
-    st.plotly_chart(fig_waterfall, use_container_width=True)
+    st.plotly_chart(fig_waterfall, use_container_width=True, key='rim_waterfall_chart')
     
     # VISUAL: Pie Chart for Value Composition
     st.markdown("#### 🥧 Visual: Value Composition")
@@ -1404,7 +1404,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
             height=380
         )
         
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, use_container_width=True, key='rim_pie_negative')
         
         # Show actual signed values in a bar chart instead
         st.markdown("#### 📊 Visual: Signed Value Components")
@@ -1432,7 +1432,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
             showlegend=False
         )
         
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, use_container_width=True, key='rim_bar_signed')
         
     else:
         # All positive - normal pie chart
@@ -1450,9 +1450,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{terminal_ri_pv / 100000:.2f} Lacs
             height=380
         )
         
-        st.plotly_chart(fig_pie, use_container_width=True)
-        
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, use_container_width=True, key='rim_pie_positive')
     
     # Detailed breakdown in columns
     col_buildup1, col_buildup2 = st.columns([2, 1])
