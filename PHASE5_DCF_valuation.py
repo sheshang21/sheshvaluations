@@ -9631,8 +9631,24 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 help="Long-term perpetual growth rate. Should be <= long-term GDP growth + inflation (typically 4-8% for India)"
             )
             
+            # Risk-free rate override
+            st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
+            auto_rf_rate_screener = get_risk_free_rate()
+            manual_rf_rate_screener = st.number_input(
+                f"Risk-Free Rate (%) - Auto: {auto_rf_rate_screener:.2f}%",
+                min_value=0.0,
+                max_value=20.0,
+                value=auto_rf_rate_screener,
+                step=0.1,
+                key='manual_rf_screener',
+                help="📊 Automatically fetched from India 10Y G-Sec. You can override if needed."
+            )
+            if abs(manual_rf_rate_screener - auto_rf_rate_screener) > 0.05:
+                st.info(f"💡 Using custom risk-free rate: {manual_rf_rate_screener:.2f}% (Auto was {auto_rf_rate_screener:.2f}%)")
+            
             # Manual discount rate override
             st.markdown("---")
+            st.markdown("**💰 Discount Rate Override (Optional)**")
             manual_discount_rate_screener = st.number_input(
                 "Manual Discount Rate Override (%):",
                 min_value=0.0,
@@ -10034,7 +10050,10 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         )
                         
                         # Calculate WACC (using peer companies for beta)
-                        wacc_details = calculate_wacc(financials_screener, tax_rate_screener / 100, peer_tickers=peer_tickers_screener)
+                        wacc_details = calculate_wacc(financials_screener, tax_rate_screener / 100, peer_tickers=peer_tickers_screener, manual_rf_rate=manual_rf_rate_screener)
+                        
+                        # Display risk-free rate being used
+                        st.info(f"🏛️ Risk-Free Rate (India 10Y G-Sec): {manual_rf_rate_screener:.2f}%")
                         
                         # Extract cash balance (index [0] is NEWEST)
                         cash_balance = financials_screener['cash'][0] if financials_screener['cash'][0] > 0 else 0
