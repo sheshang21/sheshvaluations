@@ -2902,18 +2902,123 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         return 1.0
 
 def get_risk_free_rate():
-    """Get risk-free rate from government bond yields"""
+    """Get risk-free rate from India 10-year Government Bond yields"""
+    import requests
+    from bs4 import BeautifulSoup
+    import re
+    import os
+    
+    # Method 1: Try Yahoo Finance for India G-Sec ETF (most reliable on Streamlit Cloud)
     try:
-        # Fetch 10-year India G-Sec yield from yfinance
-        gsec = get_cached_ticker("^TNX")  # Using 10-year treasury as proxy
-        info = gsec.info
-        if 'previousClose' in info:
-            return info['previousClose']
-    except:
+        # GILT is an India G-Sec ETF that tracks 10-year bonds
+        gilt = get_cached_ticker("0P0000XVSW.BO")  # Bharat Bond ETF or similar
+        info = gilt.info
+        if 'yield' in info and info['yield']:
+            yield_value = info['yield']
+            if 4.0 <= yield_value <= 15.0:
+                print(f"✓ Fetched India 10Y G-Sec yield from Yahoo: {yield_value:.2f}%")
+                return yield_value
+    except Exception as e:
         pass
     
-    # Fallback to 7% for Indian G-Sec
-    return 7.0
+    # Method 2: Try NSE India API (government bonds)
+    try:
+        session = requests.Session()
+        session.trust_env = False
+        os.environ.pop('HTTP_PROXY', None)
+        os.environ.pop('HTTPS_PROXY', None)
+        
+        # NSE Bonds API
+        url = "https://www.nseindia.com/api/government-bonds"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9'
+        }
+        
+        response = session.get(url, headers=headers, timeout=10, verify=False)
+        if response.status_code == 200:
+            data = response.json()
+            # Look for 10-year bond yield
+            for bond in data.get('data', []):
+                if '10' in str(bond.get('maturity', '')) or '2034' in str(bond.get('maturity', '')):
+                    yield_val = bond.get('yield', 0)
+                    if yield_val and 4.0 <= yield_val <= 15.0:
+                        print(f"✓ Fetched India 10Y G-Sec yield from NSE: {yield_val:.2f}%")
+                        return yield_val
+    except Exception as e:
+        pass
+    
+    # Method 3: Try RBI website (Reserve Bank of India)
+    try:
+        session = requests.Session()
+        session.trust_env = False
+        
+        url = "https://www.rbi.org.in/Scripts/BS_ViewMasRates.aspx"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        
+        response = session.get(url, headers=headers, timeout=10, verify=False)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            # Look for 10-year yield in the table
+            for row in soup.find_all('tr'):
+                cells = row.find_all('td')
+                if len(cells) >= 2:
+                    if '10' in cells[0].get_text():
+                        try:
+                            yield_text = cells[1].get_text(strip=True)
+                            yield_val = float(re.search(r'(\d+\.?\d*)', yield_text).group(1))
+                            if 4.0 <= yield_val <= 15.0:
+                                print(f"✓ Fetched India 10Y G-Sec yield from RBI: {yield_val:.2f}%")
+                                return yield_val
+                        except:
+                            pass
+    except Exception as e:
+        pass
+    
+    # Method 4: Try investing.com
+    try:
+        session = requests.Session()
+        session.trust_env = False
+        
+        url = "https://in.investing.com/rates-bonds/india-10-year-bond-yield"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        
+        response = session.get(url, headers=headers, timeout=10, verify=False)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Try multiple selectors
+            yield_elem = soup.find('span', {'data-test': 'instrument-price-last'})
+            if not yield_elem:
+                for span in soup.find_all('span'):
+                    text = span.get_text(strip=True)
+                    if text and '%' in text and len(text) < 10:
+                        try:
+                            value = float(text.replace('%', '').strip())
+                            if 4.0 <= value <= 15.0:
+                                print(f"✓ Fetched India 10Y G-Sec yield from Investing.com: {value:.2f}%")
+                                return value
+                        except:
+                            continue
+            
+            if yield_elem:
+                yield_text = yield_elem.get_text(strip=True)
+                match = re.search(r'(\d+\.?\d*)', yield_text)
+                if match:
+                    yield_value = float(match.group(1))
+                    if 4.0 <= yield_value <= 15.0:
+                        print(f"✓ Fetched India 10Y G-Sec yield from Investing.com: {yield_value:.2f}%")
+                        return yield_value
+    except Exception as e:
+        pass
+    
+    # Fallback to recent average (updated Feb 2026)
+    # Based on recent RBI data, India 10Y G-Sec is around 6.7-6.9%
+    fallback_rate = 6.75
+    print(f"⚠️ Could not fetch live G-Sec yield. Using fallback: {fallback_rate:.2f}%")
+    print(f"💡 Recent India 10Y G-Sec typically ranges: 6.5% - 7.2%")
+    return fallback_rate
 
 def get_market_return():
     """Calculate market return from Sensex historical data"""
@@ -4628,10 +4733,10 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         'avg_capex_ratio': avg_capex_ratio
     }
 
-def calculate_wacc(financials, tax_rate, peer_tickers=None):
+def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None):
     """Calculate WACC with proper beta calculation from peers"""
     # Cost of Equity (Ke)
-    rf = get_risk_free_rate()
+    rf = manual_rf_rate if manual_rf_rate is not None else get_risk_free_rate()
     rm = get_market_return()
     
     # Calculate beta from peer tickers
@@ -4702,7 +4807,7 @@ def calculate_wacc(financials, tax_rate, peer_tickers=None):
         'debt': total_debt
     }
 
-def calculate_wacc_bank(financials, tax_rate, peer_tickers=None):
+def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=None):
     """
     Calculate WACC for BANKS/NBFCs with proper Cost of Funds methodology
     
@@ -4713,7 +4818,7 @@ def calculate_wacc_bank(financials, tax_rate, peer_tickers=None):
     """
     
     # Cost of Equity (Ke) - Same as normal companies
-    rf = get_risk_free_rate()
+    rf = manual_rf_rate if manual_rf_rate is not None else get_risk_free_rate()
     rm = get_market_return()
     
     beta = 1.0
@@ -5645,6 +5750,21 @@ def main():
         with col2:
             tax_rate = st.number_input("Tax Rate (%):", min_value=0.0, max_value=100.0, value=25.0, step=0.5, key='listed_tax')
             terminal_growth = st.number_input("Terminal Growth Rate (%):", min_value=0.0, max_value=10.0, value=4.0, step=0.5, key='listed_tg')
+            
+            # Risk-free rate override
+            st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
+            auto_rf_rate = get_risk_free_rate()
+            manual_rf_rate = st.number_input(
+                f"Risk-Free Rate (%) - Auto: {auto_rf_rate:.2f}%",
+                min_value=0.0,
+                max_value=20.0,
+                value=auto_rf_rate,
+                step=0.1,
+                key='manual_rf_listed',
+                help="📊 Automatically fetched from India 10Y G-Sec. You can override if needed."
+            )
+            if abs(manual_rf_rate - auto_rf_rate) > 0.05:
+                st.info(f"💡 Using custom risk-free rate: {manual_rf_rate:.2f}% (Auto was {auto_rf_rate:.2f}%)")
         
             # Manual discount rate override
             st.markdown("**💰 Discount Rate Override (Optional)**")
@@ -6180,7 +6300,7 @@ def main():
                     current_price = info.get('currentPrice', 0)
                 
                     # Calculate Ke for bank valuations
-                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None)
+                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate)
                     beta = get_stock_beta(get_ticker_with_exchange(ticker, exchange_suffix), period_years=3)
                     wacc_details['beta'] = beta
                     wacc_details['ke'] = wacc_details['rf'] + (beta * (wacc_details['rm'] - wacc_details['rf']))
@@ -6841,7 +6961,8 @@ def main():
                 beta = get_stock_beta(full_ticker, period_years=3)
                 st.success(f"✅ Beta calculated: {beta:.3f}")
                 
-                wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None)
+                st.info(f"🏛️ Risk-Free Rate (India 10Y G-Sec): {manual_rf_rate:.2f}%")
+                wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate)
                 wacc_details['beta'] = beta  # Override with actual stock beta
                 # Recalculate Ke and WACC with actual beta
                 wacc_details['ke'] = wacc_details['rf'] + (beta * (wacc_details['rm'] - wacc_details['rf']))
@@ -8347,7 +8468,10 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        st.caption(f"**Tax:** {tax_rate:.2f}% | **Beta:** {wacc_details['beta']:.3f} | **Rf:** {wacc_details['rf']:.2f}%")
+                        rf_display = f"{wacc_details['rf']:.2f}%"
+                        if abs(wacc_details['rf'] - 6.75) < 0.1:
+                            rf_display += " (Fallback)"
+                        st.caption(f"**Tax:** {tax_rate:.2f}% | **Beta:** {wacc_details['beta']:.3f} | **Rf:** {rf_display}")
                     with col_b:
                         st.caption(f"**Equity Wt:** {wacc_details['we']:.1f}% | **Debt Wt:** {wacc_details['wd']:.1f}%")
                     
@@ -8793,8 +8917,8 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         working_capital_pct_override=working_capital_as_pct_revenue_unlisted if working_capital_as_pct_revenue_unlisted > 0 else None
                     )
                 
-                    # Calculate WACC
-                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=peer_tickers)
+                    # Calculate WACC (unlisted companies use auto-fetched risk-free rate)
+                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=peer_tickers, manual_rf_rate=None)
                 
                     # DCF Valuation
                     # Extract cash balance
