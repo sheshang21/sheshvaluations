@@ -1,7 +1,8 @@
 """
-Screener.in Auto Downloader with Excel Converter
-=================================================
+Screener.in Auto Downloader with Excel Converter (ENHANCED)
+============================================================
 Downloads Excel from Screener.in, removes blank columns, converts to template format
+Enhanced with better error handling, debugging, and multiple fallback strategies
 """
 
 import requests
@@ -14,6 +15,7 @@ import pandas as pd
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
+import time
 
 
 class ScreenerDownloader:
@@ -28,6 +30,7 @@ class ScreenerDownloader:
         """
         self.cookies_path = cookies_path
         self.session = requests.Session()
+        self.debug_mode = True  # Enable detailed logging
         self._load_cookies()
         
     def _load_cookies(self):
@@ -45,6 +48,9 @@ class ScreenerDownloader:
         elif isinstance(cookies, dict):
             for name, value in cookies.items():
                 self.session.cookies.set(name, value)
+        
+        if self.debug_mode:
+            print(f"✓ Loaded {len(self.session.cookies)} cookies")
     
     def download_excel(self, company_symbol, output_path=None, use_consolidated=False, use_id_url=False):
         """
@@ -75,44 +81,128 @@ class ScreenerDownloader:
         }
         
         try:
-            print(f"Accessing: {company_url}")
-            response = self.session.get(company_url, headers=headers, timeout=15)
+            print(f"[Step 1/4] Accessing: {company_url}")
+            response = self.session.get(company_url, headers=headers, timeout=20)
             
             if response.status_code != 200:
-                print(f"Error: Could not access page (Status: {response.status_code})")
+                print(f"❌ Error: Could not access page (Status: {response.status_code})")
+                print(f"Response text preview: {response.text[:500]}")
                 return None
+            
+            print(f"✓ Page loaded successfully ({len(response.content)} bytes)")
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Find export button
-            export_button = soup.find('button', {'formaction': re.compile(r'/user/company/export/\d+/')})
+            # ENHANCED: Try multiple methods to find export button
+            print(f"[Step 2/4] Looking for export button...")
+            export_button = None
+            formaction = None
             
+            # Method 1: Look for button with formaction
+            export_button = soup.find('button', {'formaction': re.compile(r'/user/company/export/\d+/')})
+            if export_button:
+                formaction = export_button.get('formaction')
+                print(f"✓ Found export button (Method 1): {formaction}")
+            
+            # Method 2: Look for export link
             if not export_button:
-                print("Error: Could not find export button")
+                export_link = soup.find('a', href=re.compile(r'/user/company/export/\d+/'))
+                if export_link:
+                    formaction = export_link.get('href')
+                    print(f"✓ Found export link (Method 2): {formaction}")
+            
+            # Method 3: Search all buttons and forms
+            if not formaction:
+                print("Searching all buttons and forms...")
+                all_buttons = soup.find_all('button')
+                for btn in all_buttons:
+                    if 'export' in str(btn).lower():
+                        fa = btn.get('formaction')
+                        if fa:
+                            formaction = fa
+                            print(f"✓ Found export button (Method 3): {formaction}")
+                            break
+            
+            # Method 4: Extract company ID from page and construct export URL
+            if not formaction:
+                print("Trying to extract company ID from page...")
+                # Look for company ID in various places
+                company_id = None
+                
+                # Check meta tags
+                for meta in soup.find_all('meta'):
+                    content = meta.get('content', '')
+                    if re.search(r'/company/\w+/\d+/', content):
+                        match = re.search(r'/company/\w+/(\d+)/', content)
+                        if match:
+                            company_id = match.group(1)
+                            break
+                
+                # Check all links
+                if not company_id:
+                    for link in soup.find_all('a', href=True):
+                        href = link['href']
+                        if '/company/' in href and re.search(r'\d{6,}', href):
+                            match = re.search(r'(\d{6,})', href)
+                            if match:
+                                company_id = match.group(1)
+                                break
+                
+                if company_id:
+                    formaction = f"/user/company/export/{company_id}/"
+                    print(f"✓ Constructed export URL (Method 4): {formaction}")
+            
+            if not formaction:
+                print("❌ Error: Could not find export button or link")
+                print("Available buttons:", [btn.get('formaction') for btn in soup.find_all('button') if btn.get('formaction')])
+                
+                # Save debug HTML
+                debug_path = "debug_screener_page.html"
+                with open(debug_path, 'w', encoding='utf-8') as f:
+                    f.write(str(soup.prettify()))
+                print(f"Debug: Saved page HTML to {debug_path}")
+                
                 return None
             
-            formaction = export_button.get('formaction')
-            print(f"Found export URL: {formaction}")
-            
             # Get CSRF token
-            form = export_button.find_parent('form')
+            print(f"[Step 3/4] Getting CSRF token...")
             csrf_token = None
-            if form:
-                csrf_input = form.find('input', {'name': 'csrfmiddlewaretoken'})
-                if csrf_input:
-                    csrf_token = csrf_input.get('value')
             
+            # Method 1: From form
+            if export_button:
+                form = export_button.find_parent('form')
+                if form:
+                    csrf_input = form.find('input', {'name': 'csrfmiddlewaretoken'})
+                    if csrf_input:
+                        csrf_token = csrf_input.get('value')
+                        print(f"✓ Found CSRF token from form")
+            
+            # Method 2: From cookies
             if not csrf_token:
                 csrf_token = self.session.cookies.get('csrftoken', '')
+                if csrf_token:
+                    print(f"✓ Found CSRF token from cookies")
+            
+            # Method 3: From page meta
+            if not csrf_token:
+                csrf_meta = soup.find('meta', {'name': 'csrf-token'})
+                if csrf_meta:
+                    csrf_token = csrf_meta.get('content', '')
+                    print(f"✓ Found CSRF token from meta tag")
+            
+            if not csrf_token:
+                print("⚠️ Warning: No CSRF token found, proceeding anyway...")
+                csrf_token = ''
             
             # POST to export URL
             export_url = f"https://www.screener.in{formaction}"
             
             post_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*',
+                'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Referer': company_url,
-                'Origin': 'https://www.screener.in'
+                'Origin': 'https://www.screener.in',
+                'X-CSRFToken': csrf_token
             }
             
             post_data = {
@@ -120,12 +210,24 @@ class ScreenerDownloader:
                 'next': f'/company/id/{company_symbol}/{url_suffix}' if use_id_url else f'/company/{company_symbol}/{url_suffix}'
             }
             
-            print(f"Downloading from: {export_url}")
-            download_response = self.session.post(export_url, headers=post_headers, data=post_data, timeout=30)
+            print(f"[Step 4/4] Downloading from: {export_url}")
+            
+            # Add small delay to avoid rate limiting
+            time.sleep(1)
+            
+            download_response = self.session.post(export_url, headers=post_headers, data=post_data, timeout=30, allow_redirects=True)
             
             if download_response.status_code != 200:
-                print(f"Error: Download failed (Status: {download_response.status_code})")
+                print(f"❌ Error: Download failed (Status: {download_response.status_code})")
+                print(f"Response headers: {dict(download_response.headers)}")
+                print(f"Response preview: {download_response.text[:500]}")
                 return None
+            
+            # Check if response is actually Excel
+            content_type = download_response.headers.get('content-type', '')
+            if 'excel' not in content_type.lower() and 'spreadsheet' not in content_type.lower():
+                print(f"⚠️ Warning: Unexpected content type: {content_type}")
+                # Try anyway - sometimes it still works
             
             # Save file
             if output_path is None:
@@ -135,14 +237,25 @@ class ScreenerDownloader:
                 f.write(download_response.content)
             
             if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                print(f"✓ Downloaded: {output_path} ({os.path.getsize(output_path)} bytes)")
+                size_kb = os.path.getsize(output_path) / 1024
+                print(f"✅ Downloaded successfully: {output_path} ({size_kb:.1f} KB)")
+                
+                # Verify it's a valid Excel file
+                try:
+                    test_wb = load_workbook(output_path, read_only=True)
+                    test_wb.close()
+                    print(f"✓ Excel file verified")
+                except Exception as e:
+                    print(f"❌ Error: Downloaded file is not valid Excel: {e}")
+                    return None
+                
                 return output_path
             else:
-                print("Error: File empty or not created")
+                print("❌ Error: File empty or not created")
                 return None
                 
         except Exception as e:
-            print(f"Error downloading: {e}")
+            print(f"❌ Error downloading: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -158,12 +271,13 @@ class ScreenerDownloader:
             bool: True if successful
         """
         try:
+            print("[Cleanup] Removing empty columns...")
             wb = load_workbook(excel_path)
             
             if 'Data Sheet' not in wb.sheetnames:
-                print("Data Sheet not found")
+                print("⚠️ Warning: Data Sheet not found, skipping cleanup")
                 wb.close()
-                return False
+                return True  # Don't fail if sheet structure is different
             
             ws = wb['Data Sheet']
             
@@ -176,9 +290,9 @@ class ScreenerDownloader:
                     break
             
             if not pl_date_row:
-                print("Could not find Report Date row")
+                print("⚠️ Warning: Could not find Report Date row, skipping cleanup")
                 wb.close()
-                return False
+                return True
             
             # Check which columns have actual year data
             cols_to_delete = []
@@ -201,115 +315,100 @@ class ScreenerDownloader:
                 # Also check if column has any financial data (check Sales row)
                 sales_row = pl_date_row + 1
                 has_data = False
-                for check_row in range(sales_row, min(sales_row + 10, ws.max_row + 1)):
-                    val = ws.cell(check_row, col).value
-                    if val and val != 0:
-                        try:
-                            float(val)
+                for check_row in range(sales_row, sales_row + 10):
+                    if check_row <= ws.max_row:
+                        val = ws.cell(check_row, col).value
+                        if val and val != 0:
                             has_data = True
                             break
-                        except:
-                            pass
                 
                 if not has_data:
                     cols_to_delete.append(col)
             
-            # Delete columns in reverse order
-            for col in sorted(cols_to_delete, reverse=True):
+            # Delete empty columns (in reverse to maintain indices)
+            for col in reversed(cols_to_delete):
                 ws.delete_cols(col)
-                print(f"✓ Deleted empty column {col}")
+                if self.debug_mode:
+                    print(f"  Deleted empty column {col}")
+            
+            wb.save(excel_path)
+            wb.close()
             
             if cols_to_delete:
-                wb.save(excel_path)
                 print(f"✓ Removed {len(cols_to_delete)} empty columns")
             else:
-                print("No empty columns to remove")
+                print(f"✓ No empty columns found")
             
-            wb.close()
             return True
             
         except Exception as e:
-            print(f"Error removing empty columns: {e}")
-            return False
-    
-    def remove_blank_columns(self, excel_path):
-        """Legacy method - calls remove_empty_year_columns"""
-        return self.remove_empty_year_columns(excel_path)
+            print(f"⚠️ Warning: Cleanup failed: {e}")
+            # Don't fail the entire process if cleanup fails
+            return True
     
     def convert_to_template(self, screener_excel_path, output_path=None):
         """
-        Convert Screener Data Sheet to EXACT target format
+        Convert Screener Excel to exact template format
         
-        Target format:
-        - Sheet 1: "Balance Sheet" with title row, Report Date row, then data
-        - Sheet 2: "Profit and Loss Account" with title row, Report Date row, then data
+        Args:
+            screener_excel_path: Path to downloaded Excel
+            output_path: Where to save template (optional)
+            
+        Returns:
+            str: Path to template file or None if failed
         """
         try:
-            from openpyxl import load_workbook, Workbook
+            print("[Conversion] Converting to template format...")
             
-            # Load source file
+            # Load source workbook
             src_wb = load_workbook(screener_excel_path, data_only=True)
             
             if 'Data Sheet' not in src_wb.sheetnames:
-                print("Error: Data Sheet not found")
+                print("❌ Error: Data Sheet not found in source file")
+                print(f"Available sheets: {src_wb.sheetnames}")
                 src_wb.close()
                 return None
             
             src_ws = src_wb['Data Sheet']
             
-            # Find sections in Data Sheet
+            # Find P&L and Balance Sheet date rows
             pl_date_row = None
             bs_date_row = None
             
-            for i in range(1, 100):
+            for i in range(1, min(100, src_ws.max_row + 1)):
                 val = src_ws.cell(i, 1).value
                 if val:
-                    val_str = str(val).upper()
-                    if ('PROFIT' in val_str or 'P&L' in val_str or 'P & L' in val_str) and pl_date_row is None:
-                        # Next row is Report Date
-                        if src_ws.cell(i + 1, 1).value and 'Report Date' in str(src_ws.cell(i + 1, 1).value):
-                            pl_date_row = i + 1
-                    elif 'BALANCE' in val_str and bs_date_row is None:
-                        if src_ws.cell(i + 1, 1).value and 'Report Date' in str(src_ws.cell(i + 1, 1).value):
-                            bs_date_row = i + 1
+                    val_str = str(val).strip()
+                    if 'Report Date' in val_str and pl_date_row is None:
+                        pl_date_row = i
+                    elif 'Report Date' in val_str and pl_date_row is not None and bs_date_row is None:
+                        bs_date_row = i
+                        break
             
             if not pl_date_row or not bs_date_row:
-                print(f"Error: Sections not found. PL:{pl_date_row}, BS:{bs_date_row}")
+                print(f"❌ Error: Could not find date rows (P&L: {pl_date_row}, BS: {bs_date_row})")
                 src_wb.close()
                 return None
             
-            print(f"P&L date row: {pl_date_row}, BS date row: {bs_date_row}")
+            print(f"✓ Found P&L at row {pl_date_row}, Balance Sheet at row {bs_date_row}")
             
-            # Find first column with data (skip empty columns at start)
-            first_data_col = None
-            for col in range(2, src_ws.max_column + 1):
-                val = src_ws.cell(pl_date_row, col).value
-                if val:
-                    first_data_col = col
-                    break
-            
-            if not first_data_col:
-                print("Error: No data columns found")
-                src_wb.close()
-                return None
-            
-            # Extract all dates/years from Report Date row
+            # Extract dates from P&L section
             dates = []
             date_cols = []
-            for col in range(first_data_col, src_ws.max_column + 1):
-                val = src_ws.cell(pl_date_row, col).value
-                if val:
-                    dates.append(val)
+            for col in range(2, src_ws.max_column + 1):
+                date_val = src_ws.cell(pl_date_row, col).value
+                if date_val:
+                    dates.append(date_val)
                     date_cols.append(col)
             
             if not dates:
-                print("Error: No dates found")
+                print("❌ Error: No dates found")
                 src_wb.close()
                 return None
             
-            print(f"✓ Found {len(dates)} date columns starting at column {first_data_col}")
+            print(f"✓ Found {len(dates)} year columns")
             
-            # Create new workbook
+            # Create new workbook with exact template structure
             new_wb = Workbook()
             new_wb.remove(new_wb.active)  # Remove default sheet
             
@@ -326,7 +425,7 @@ class ScreenerDownloader:
             
             # Define Balance Sheet items IN EXACT ORDER from target
             bs_items = [
-                'Equity Share Capital',
+                'Equity Capital',
                 'Reserves',
                 'Borrowings',
                 'Other Liabilities',
@@ -352,7 +451,7 @@ class ScreenerDownloader:
                 bs_ws.cell(current_target_row, 1).value = item_name
                 
                 # Find this item in source
-                for src_row in range(bs_date_row + 1, min(bs_date_row + 25, src_ws.max_row + 1)):
+                for src_row in range(bs_date_row + 1, min(bs_date_row + 30, src_ws.max_row + 1)):
                     src_item = src_ws.cell(src_row, 1).value
                     if src_item:
                         src_item_str = str(src_item).strip()
@@ -437,33 +536,17 @@ class ScreenerDownloader:
             new_wb.close()
             src_wb.close()
             
-            print(f"✓ Template created: {output_path}")
-            print(f"  - Sheet 1: Balance Sheet ({len(bs_items)} rows)")
-            print(f"  - Sheet 2: Profit and Loss Account ({len(pl_items)} rows)")
+            print(f"✅ Template created: {output_path}")
+            print(f"  - Sheet 1: Balance Sheet ({len(bs_items)} items)")
+            print(f"  - Sheet 2: Profit and Loss Account ({len(pl_items)} items)")
             
             return output_path
             
         except Exception as e:
-            print(f"Error converting: {e}")
+            print(f"❌ Error converting: {e}")
             import traceback
             traceback.print_exc()
             return None
-    
-    def _setup_template_sheet(self, ws, years, sheet_type):
-        """Legacy method - no longer used"""
-        pass
-    
-    def _populate_balance_sheet(self, ws, df, year_row_idx, years):
-        """Legacy method - no longer used"""
-        pass
-    
-    def _populate_pl_sheet(self, ws, df, year_row_idx, years):
-        """Legacy method - no longer used"""
-        pass
-    
-    def _find_item_values(self, df, item_name, year_row_idx, years):
-        """Legacy method - no longer used"""
-        pass
     
     def auto_download_and_convert(self, company_symbol, output_dir=".", keep_original=False, use_consolidated=False, use_id_url=False):
         """
@@ -480,6 +563,13 @@ class ScreenerDownloader:
             str: Path to ready-to-use Excel file or None if failed
         """
         try:
+            print(f"\n{'='*70}")
+            print(f"AUTO DOWNLOAD AND CONVERT WORKFLOW")
+            print(f"Company: {company_symbol}")
+            print(f"Consolidated: {use_consolidated}")
+            print(f"ID URL: {use_id_url}")
+            print(f"{'='*70}\n")
+            
             os.makedirs(output_dir, exist_ok=True)
             
             # Download Excel
@@ -487,6 +577,9 @@ class ScreenerDownloader:
             downloaded_path = self.download_excel(company_symbol, original_path, use_consolidated, use_id_url)
             
             if not downloaded_path:
+                print("\n" + "="*70)
+                print("❌ WORKFLOW FAILED: Could not download Excel file")
+                print("="*70)
                 return None
             
             # Remove empty columns
@@ -501,10 +594,22 @@ class ScreenerDownloader:
                 os.remove(downloaded_path)
                 print(f"✓ Removed original file")
             
+            if converted_path:
+                print("\n" + "="*70)
+                print("✅ WORKFLOW COMPLETED SUCCESSFULLY")
+                print(f"Template file: {converted_path}")
+                print("="*70)
+            else:
+                print("\n" + "="*70)
+                print("❌ WORKFLOW FAILED: Could not convert to template")
+                print("="*70)
+            
             return converted_path
             
         except Exception as e:
-            print(f"Error in workflow: {e}")
+            print(f"\n{'='*70}")
+            print(f"❌ WORKFLOW ERROR: {e}")
+            print(f"{'='*70}")
             import traceback
             traceback.print_exc()
             return None
@@ -527,5 +632,19 @@ def download_screener_data(company_symbol, cookies_path="screener_cookies.pkl", 
 
 
 if __name__ == "__main__":
-    print("Screener Downloader Module")
+    print("Screener Downloader Module (Enhanced)")
     print("Usage: from screener_downloader import download_screener_data")
+    print("\nTest download:")
+    
+    # Test with a known working company
+    test_symbol = "RELIANCE"
+    print(f"\nTesting download for {test_symbol}...")
+    
+    try:
+        result = download_screener_data(test_symbol, output_dir="./test_output")
+        if result:
+            print(f"\n✅ Test successful! File created: {result}")
+        else:
+            print(f"\n❌ Test failed!")
+    except Exception as e:
+        print(f"\n❌ Test error: {e}")
