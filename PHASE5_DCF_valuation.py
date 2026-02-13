@@ -7679,10 +7679,13 @@ def main():
                 
                     with tab10:
                         st.subheader("🏢 Residual Income Model (RIM)")
-                        st.caption("Equity valuation based on book value and excess returns")
+                        st.caption("Equity valuation based on book value and excess returns - FULL DISCLOSURE")
                     
-                        # RIM Section
+                        # RIM Section with COMPLETE transparency
                         if rim_result and rim_result.get('value_per_share', 0) > 0:
+                            # Top-level result
+                            st.success(f"### 🎯 Fair Value per Share (RIM): ₹{rim_result['value_per_share']:.2f}")
+                            
                             # Top metrics
                             col1, col2, col3, col4 = st.columns(4)
                             with col1:
@@ -7697,57 +7700,249 @@ def main():
                         
                             st.markdown("---")
                         
-                            col_a, col_b = st.columns(2)
-                        
-                            with col_a:
-                                st.markdown("**📊 Model Parameters**")
-                                st.write(f"• **Current Book Value:** ₹{rim_result['current_book_value']:,.0f} Lacs")
-                                st.write(f"• **Book Value per Share:** ₹{rim_result['book_value_per_share']:.2f}")
-                                st.write(f"• **Current EPS:** ₹{rim_result['current_eps']:.2f}")
-                                st.write(f"• **ROE:** {rim_result['roe']:.2f}%")
-                                st.write(f"• **Cost of Equity:** {rim_result['cost_of_equity']:.2f}%")
-                                st.write(f"• **Book Value Growth:** {rim_result.get('bv_growth', 10):.1f}%")
-                                st.write(f"• **Terminal Growth:** {rim_result['terminal_growth']:.1f}%")
-                        
-                            with col_b:
-                                st.markdown("**📐 Residual Income Model Formula**")
-                                st.markdown("")  # Spacing
+                            # SECTION 1: FORMULAS
+                            st.markdown("### 📐 RIM Formulas & Methodology")
                             
-                                # Main valuation formula - larger
-                                st.latex(r"\huge P_0 = BV_0 + \sum_{t=1}^{n} \frac{RI_t}{(1+r)^t}")
+                            col_formula1, col_formula2 = st.columns(2)
                             
-                                st.markdown("")  # Spacing
+                            with col_formula1:
+                                st.markdown("**Main Valuation Formula:**")
+                                st.latex(r"P_0 = BV_0 + \sum_{t=1}^{n} \frac{RI_t}{(1+r)^t} + \frac{TV}{(1+r)^n}")
+                                
+                                st.markdown("**Residual Income Formula:**")
+                                st.latex(r"RI_t = NI_t - (r \times BV_{t-1})")
+                                
+                                st.markdown("**Terminal Value Formula:**")
+                                st.latex(r"TV = \frac{RI_n \times (1+g)}{r - g}")
+                            
+                            with col_formula2:
                                 st.markdown("**Where:**")
-                            
-                                # Residual Income definition - larger
-                                st.latex(r"\large RI_t = NI_t - (r \times BV_{t-1})")
-                            
-                                st.markdown("")  # Spacing
                                 st.markdown(f"""
-                                - **P₀** (Fair Value per Share) = **₹{rim_result['value_per_share']:.2f}**
-                                - **BV₀** (Current Book Value/Share) = ₹{rim_result['book_value_per_share']:.2f}
-                                - **RI** (Residual Income) = NI - (r × BV)
-                                - **NI** (Net Income) = Projected earnings
-                                - **r** (Cost of Equity) = {rim_result['cost_of_equity']:.2f}%
-                                - **n** (Projection Period) = 5 years + Terminal Value
+                                - **P₀** = Fair Value per Share = **₹{rim_result['value_per_share']:.2f}**
+                                - **BV₀** = Current Book Value = **₹{rim_result['current_book_value']:,.0f}**
+                                - **RI** = Residual Income (excess return)
+                                - **NI** = Net Income (projected)
+                                - **r** = Cost of Equity = **{rim_result['cost_of_equity']:.2f}%**
+                                - **g** = Terminal Growth = **{rim_result['terminal_growth']:.2f}%**
+                                - **n** = Projection Period = **5 years**
                                 """)
                             
-                                st.markdown("")  # Spacing
-                                st.markdown("**💡 Value Build-up:**")
-                                pv_ri_per_share = (rim_result['sum_pv_ri'] / shares) if shares > 0 else 0
-                                tv_per_share = (rim_result['terminal_ri_pv'] / shares) if shares > 0 else 0
+                            st.markdown("---")
                             
+                            # SECTION 2: INPUT PARAMETERS
+                            st.markdown("### 📊 Input Parameters & Assumptions")
+                            
+                            col_input1, col_input2, col_input3 = st.columns(3)
+                            
+                            with col_input1:
+                                st.markdown("**Current State:**")
+                                st.write(f"• Book Value (Total): ₹{rim_result['current_book_value']:,.0f}")
+                                st.write(f"• Book Value/Share: ₹{rim_result['book_value_per_share']:.2f}")
+                                st.write(f"• Current EPS: ₹{rim_result['current_eps']:.2f}")
+                                st.write(f"• Number of Shares: {shares:,.0f}")
+                            
+                            with col_input2:
+                                st.markdown("**Profitability:**")
+                                st.write(f"• Return on Equity: {rim_result['roe']:.2f}%")
+                                st.write(f"• Cost of Equity: {rim_result['cost_of_equity']:.2f}%")
+                                excess_return = rim_result['roe'] - rim_result['cost_of_equity']
+                                st.write(f"• Excess Return: {excess_return:.2f}%")
+                            
+                            with col_input3:
+                                st.markdown("**Growth Rates:**")
+                                st.write(f"• Book Value Growth: {rim_result.get('bv_growth', 10):.2f}%")
+                                st.write(f"• Terminal Growth: {rim_result['terminal_growth']:.2f}%")
+                                if rim_result.get('using_dcf_projections'):
+                                    st.info("✅ Using DCF Projected NOPAT")
+                                else:
+                                    st.info("📊 Using ROE-based projection")
+                            
+                            st.markdown("---")
+                            
+                            # SECTION 3: YEAR-BY-YEAR PROJECTIONS
+                            st.markdown("### 📈 Year-by-Year Residual Income Projections")
+                            
+                            projections = rim_result.get('projections', [])
+                            if projections:
+                                # Create detailed projection table
+                                proj_data = []
+                                for proj in projections:
+                                    year = proj.get('year', 0)
+                                    bv_year = proj.get('book_value', 0) / 100000  # Convert to Lacs
+                                    ni_year = proj.get('net_income', 0) / 100000
+                                    ri_year = proj.get('residual_income', 0) / 100000
+                                    pv_ri_year = proj.get('pv_ri', 0) / 100000
+                                    req_return = bv_year * rim_result['cost_of_equity'] / 100
+                                    
+                                    proj_data.append({
+                                        'Year': f"Year {year}",
+                                        'Book Value (₹ Lacs)': f"{bv_year:.2f}",
+                                        'Net Income (₹ Lacs)': f"{ni_year:.2f}",
+                                        'Required Return (₹ Lacs)': f"{req_return:.2f}",
+                                        'Residual Income (₹ Lacs)': f"{ri_year:.2f}",
+                                        'Discount Factor': f"{1 / ((1 + rim_result['cost_of_equity']/100) ** year):.4f}",
+                                        'PV of RI (₹ Lacs)': f"{pv_ri_year:.2f}"
+                                    })
+                                
+                                proj_df = pd.DataFrame(proj_data)
+                                st.dataframe(proj_df, use_container_width=True)
+                                
+                                # Show ACTUAL calculations for ALL years
+                                st.markdown("### 🔢 Detailed Calculations for Each Year")
+                                
+                                for idx, proj in enumerate(projections):
+                                    year = proj.get('year', 0)
+                                    bv_year = proj.get('book_value', 0) / 100000
+                                    ni_year = proj.get('net_income', 0) / 100000
+                                    req_ret_year = bv_year * rim_result['cost_of_equity'] / 100
+                                    ri_year = proj.get('residual_income', 0) / 100000
+                                    pv_ri_year = proj.get('pv_ri', 0) / 100000
+                                    discount_factor = 1 / ((1 + rim_result['cost_of_equity']/100) ** year)
+                                    
+                                    with st.expander(f"📊 Year {year} Calculation", expanded=(idx==0)):
+                                        st.code(f"""
+YEAR {year} CALCULATIONS:
+{'='*60}
+
+Step 1: Book Value
+    Book Value (Year {year}) = ₹{bv_year:.2f} Lacs
+
+Step 2: Net Income  
+    Net Income (Year {year}) = ₹{ni_year:.2f} Lacs
+
+Step 3: Required Return (Equity Charge)
+    Required Return = Book Value × Cost of Equity
+                   = ₹{bv_year:.2f} × {rim_result['cost_of_equity']:.2f}%
+                   = ₹{req_ret_year:.2f} Lacs
+
+Step 4: Residual Income (Excess Profit)
+    Residual Income = Net Income - Required Return
+                   = ₹{ni_year:.2f} - ₹{req_ret_year:.2f}
+                   = ₹{ri_year:.2f} Lacs
+    
+    {'✅ CREATING VALUE' if ri_year > 0 else '⚠️ DESTROYING VALUE'} - {'Company earns more than required return' if ri_year > 0 else 'Company earns less than required return'}
+
+Step 5: Present Value (Discount to Today)
+    Discount Factor = 1 / (1 + Ke)^{year}
+                   = 1 / (1 + {rim_result['cost_of_equity']/100:.4f})^{year}
+                   = {discount_factor:.4f}
+    
+    PV of RI = Residual Income × Discount Factor
+            = ₹{ri_year:.2f} × {discount_factor:.4f}
+            = ₹{pv_ri_year:.2f} Lacs
+
+{'='*60}
+CONTRIBUTION TO FAIR VALUE: ₹{pv_ri_year:.2f} Lacs
+                                        """, language="text")
+                                
+                                # TERMINAL VALUE CALCULATION
+                                st.markdown("### 🎯 Terminal Value Calculation")
+                                
+                                if len(projections) > 0:
+                                    last_proj = projections[-1]
+                                    last_ri = last_proj.get('residual_income', 0) / 100000
+                                    
+                                    st.code(f"""
+TERMINAL VALUE (Beyond Year 5):
+{'='*60}
+
+Step 1: Terminal Year Residual Income
+    RI (Year 5) = ₹{last_ri:.2f} Lacs
+
+Step 2: Grow at Terminal Growth Rate
+    RI (Year 6) = RI (Year 5) × (1 + g)
+                = ₹{last_ri:.2f} × (1 + {rim_result['terminal_growth']/100:.4f})
+                = ₹{last_ri * (1 + rim_result['terminal_growth']/100):.2f} Lacs
+
+Step 3: Perpetuity Value (Gordon Growth Model)
+    Terminal Value = RI (Year 6) / (Ke - g)
+                  = ₹{last_ri * (1 + rim_result['terminal_growth']/100):.2f} / ({rim_result['cost_of_equity']:.2f}% - {rim_result['terminal_growth']:.2f}%)
+                  = ₹{last_ri * (1 + rim_result['terminal_growth']/100):.2f} / {rim_result['cost_of_equity'] - rim_result['terminal_growth']:.2f}%
+                  = ₹{(last_ri * (1 + rim_result['terminal_growth']/100)) / ((rim_result['cost_of_equity'] - rim_result['terminal_growth']) / 100):.2f} Lacs
+
+Step 4: Discount to Present Value
+    Discount Factor = 1 / (1 + Ke)^5
+                   = 1 / (1 + {rim_result['cost_of_equity']/100:.4f})^5
+                   = {1 / ((1 + rim_result['cost_of_equity']/100) ** 5):.4f}
+    
+    PV of Terminal Value = TV × Discount Factor
+                        = ₹{(last_ri * (1 + rim_result['terminal_growth']/100)) / ((rim_result['cost_of_equity'] - rim_result['terminal_growth']) / 100):.2f} × {1 / ((1 + rim_result['cost_of_equity']/100) ** 5):.4f}
+                        = ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
+
+{'='*60}
+TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
+                                    """, language="text")
+                            
+                            st.markdown("---")
+                            
+                            # SECTION 4: VALUE BUILD-UP
+                            st.markdown("### 💰 Fair Value Build-Up")
+                            
+                            pv_ri_per_share = (rim_result['sum_pv_ri'] / shares) if shares > 0 else 0
+                            tv_per_share = (rim_result['terminal_ri_pv'] / shares) if shares > 0 else 0
+                            
+                            col_buildup1, col_buildup2 = st.columns([2, 1])
+                            
+                            with col_buildup1:
                                 st.code(f"""
-    Fair Value Components:
-      Starting Point:
-        Current Book Value/Share     = ₹{rim_result['book_value_per_share']:.2f}
-  
-      Plus: Value Creation
-        PV of RI (Years 1-5)         = ₹{pv_ri_per_share:.2f}
-        PV of Terminal Value         = ₹{tv_per_share:.2f}
-  
-      = Fair Value per Share         = ₹{rim_result['value_per_share']:.2f}
+FAIR VALUE CALCULATION (Per Share Basis):
+==========================================
+
+Starting Point:
+    Current Book Value/Share              = ₹{rim_result['book_value_per_share']:.2f}
+
+Add: Present Value of Residual Income (Years 1-5)
+    Sum of PV(RI) per Share               = ₹{pv_ri_per_share:.2f}
+
+Add: Terminal Value
+    PV of Terminal RI per Share           = ₹{tv_per_share:.2f}
+
+==========================================
+FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2f}
                                 """, language="text")
+                            
+                            with col_buildup2:
+                                st.markdown("**Total Equity Value:**")
+                                st.write(f"• Book Value: ₹{rim_result['current_book_value']/100000:.2f} Lacs")
+                                st.write(f"• PV of RI (5Y): ₹{rim_result['sum_pv_ri']/100000:.2f} Lacs")
+                                st.write(f"• Terminal Value: ₹{rim_result['terminal_ri_pv']/100000:.2f} Lacs")
+                                st.write(f"• **Total**: ₹{rim_result['total_equity_value']/100000:.2f} Lacs")
+                                st.write("")
+                                st.write(f"÷ Shares: {shares:,.0f}")
+                                st.success(f"**= ₹{rim_result['value_per_share']:.2f} per share**")
+                            
+                            st.markdown("---")
+                            
+                            # SECTION 5: KEY INSIGHTS
+                            st.markdown("### 💡 Key Insights")
+                            
+                            col_insight1, col_insight2 = st.columns(2)
+                            
+                            with col_insight1:
+                                st.markdown("**Value Composition:**")
+                                total_value = rim_result['book_value_per_share'] + pv_ri_per_share + tv_per_share
+                                if total_value > 0:
+                                    bv_pct = (rim_result['book_value_per_share'] / total_value) * 100
+                                    ri_pct = (pv_ri_per_share / total_value) * 100
+                                    tv_pct = (tv_per_share / total_value) * 100
+                                    
+                                    st.write(f"• Book Value: {bv_pct:.1f}% (₹{rim_result['book_value_per_share']:.2f})")
+                                    st.write(f"• RI (5 Years): {ri_pct:.1f}% (₹{pv_ri_per_share:.2f})")
+                                    st.write(f"• Terminal Value: {tv_pct:.1f}% (₹{tv_per_share:.2f})")
+                            
+                            with col_insight2:
+                                st.markdown("**Economic Profit:**")
+                                if rim_result['roe'] > rim_result['cost_of_equity']:
+                                    st.success(f"✅ Creating Value: ROE ({rim_result['roe']:.2f}%) > Ke ({rim_result['cost_of_equity']:.2f}%)")
+                                    st.write(f"• Excess return: {excess_return:.2f}%")
+                                elif rim_result['roe'] < rim_result['cost_of_equity']:
+                                    st.error(f"⚠️ Destroying Value: ROE ({rim_result['roe']:.2f}%) < Ke ({rim_result['cost_of_equity']:.2f}%)")
+                                    st.write(f"• Value deficit: {excess_return:.2f}%")
+                                else:
+                                    st.info(f"Earning exactly required return: ROE = Ke = {rim_result['roe']:.2f}%")
+                            
+                            st.markdown("---")
+                            st.caption("📘 **RIM Model Note:** Residual Income Model values companies based on their ability to generate returns above the cost of equity. Positive residual income indicates value creation.")
                         
                             # 5-year RI projections
                             if 'projections' in rim_result and rim_result['projections']:
