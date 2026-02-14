@@ -5519,9 +5519,17 @@ def main():
         with rf_col3:
             st.write("")
             st.write("")
+            
+            # Add a counter to track button clicks
+            if 'rf_fetch_click_count_listed' not in st.session_state:
+                st.session_state.rf_fetch_click_count_listed = 0
+            
             if st.button("🔄 Fetch", key='refresh_rf_listed_top'):
+                # Increment click counter FIRST
+                st.session_state.rf_fetch_click_count_listed += 1
+                
                 st.write("---")
-                st.write("🔄 **FETCH BUTTON CLICKED - LISTED MODE**")
+                st.write(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_listed} - LISTED MODE**")
                 st.write(f"📝 Input ticker: `{custom_rf_ticker_listed}`")
                 
                 ticker_to_use = custom_rf_ticker_listed.strip() if custom_rf_ticker_listed.strip() else None
@@ -5558,6 +5566,7 @@ def main():
             st.write(f"- `cached_rf_rate_listed`: {st.session_state.get('cached_rf_rate_listed', 'NOT SET')}")
             st.write(f"- `manual_rf_listed` widget: {st.session_state.get('manual_rf_listed', 'NOT SET')}")
             st.write(f"- `custom_rf_ticker_listed_top`: {st.session_state.get('custom_rf_ticker_listed_top', 'NOT SET')}")
+            st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_listed', 0)}")
     
         col1, col2 = st.columns(2)
     
@@ -8619,9 +8628,17 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         with rf_col3:
             st.write("")
             st.write("")
+            
+            # Add a counter to track button clicks
+            if 'rf_fetch_click_count_unlisted' not in st.session_state:
+                st.session_state.rf_fetch_click_count_unlisted = 0
+            
             if st.button("🔄 Fetch", key='refresh_rf_unlisted_top'):
+                # Increment click counter FIRST
+                st.session_state.rf_fetch_click_count_unlisted += 1
+                
                 st.write("---")
-                st.write("🔄 **FETCH BUTTON CLICKED - UNLISTED MODE**")
+                st.write(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_unlisted} - UNLISTED MODE**")
                 st.write(f"📝 Input ticker: `{custom_rf_ticker_unlisted}`")
                 
                 ticker_to_use = custom_rf_ticker_unlisted.strip() if custom_rf_ticker_unlisted.strip() else None
@@ -8658,6 +8675,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             st.write(f"- `cached_rf_rate_unlisted`: {st.session_state.get('cached_rf_rate_unlisted', 'NOT SET')}")
             st.write(f"- `manual_rf_unlisted` widget: {st.session_state.get('manual_rf_unlisted', 'NOT SET')}")
             st.write(f"- `custom_rf_ticker_unlisted_top`: {st.session_state.get('custom_rf_ticker_unlisted_top', 'NOT SET')}")
+            st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_unlisted', 0)}")
     
         # Template download section
         st.markdown("#### 📥 Download Excel Template")
@@ -9563,9 +9581,17 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         with rf_col3:
             st.write("")
             st.write("")
+            
+            # Add a counter to track button clicks
+            if 'rf_fetch_click_count_screener' not in st.session_state:
+                st.session_state.rf_fetch_click_count_screener = 0
+            
             if st.button("🔄 Fetch", key='refresh_rf_screener_top'):
+                # Increment click counter FIRST
+                st.session_state.rf_fetch_click_count_screener += 1
+                
                 st.write("---")
-                st.write("🔄 **FETCH BUTTON CLICKED - SCREENER MODE**")
+                st.write(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_screener} - SCREENER MODE**")
                 st.write(f"📝 Input ticker: `{custom_rf_ticker_screener}`")
                 
                 ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
@@ -9602,6 +9628,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             st.write(f"- `cached_rf_rate_screener`: {st.session_state.get('cached_rf_rate_screener', 'NOT SET')}")
             st.write(f"- `manual_rf_screener` widget: {st.session_state.get('manual_rf_screener', 'NOT SET')}")
             st.write(f"- `custom_rf_ticker_screener_top`: {st.session_state.get('custom_rf_ticker_screener_top', 'NOT SET')}")
+            st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_screener', 0)}")
         
         # Add template download button
         st.markdown("#### 📥 Download Screener Template")
