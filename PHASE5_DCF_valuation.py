@@ -9471,18 +9471,18 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     # Calculate RIM if enabled
                     if run_rim_unlisted:
                         try:
-                            # Calculate RIM
+                            # Calculate RIM using the correct function
                             rim_required_return = rim_required_return_unlisted if rim_required_return_unlisted > 0 else wacc_details['wacc']
                             rim_roe = rim_assumed_roe_unlisted if rim_assumed_roe_unlisted > 0 else None
                             rim_term_growth = rim_terminal_growth_unlisted if rim_terminal_growth_unlisted > 0 else terminal_growth
                             rim_proj_years = rim_projection_years_unlisted if rim_projection_years_unlisted > 0 else projection_years
                             
-                            rim_results_unlisted = calculate_rim_valuation(
+                            rim_results_unlisted = calculate_residual_income_model(
                                 financials,
-                                rim_required_return,
-                                rim_term_growth,
-                                rim_proj_years,
                                 num_shares,
+                                rim_required_return,
+                                terminal_growth=rim_term_growth,
+                                projection_years=rim_proj_years,
                                 assumed_roe=rim_roe
                             )
                             
@@ -9613,7 +9613,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             
                             # Add Projections Chart
                             try:
-                                st.plotly_chart(create_projections_chart(projections), use_container_width=True)
+                                st.plotly_chart(create_fcff_projection_chart(projections), use_container_width=True)
                             except Exception as e:
                                 st.error(f"Projections chart error: {str(e)}")
                             
@@ -9625,7 +9625,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 'EBITDA': projections['ebitda'],
                                 'NOPAT': projections['nopat'],
                                 'CapEx': projections['capex'],
-                                'Δ WC': projections['change_wc'],
+                                'Δ WC': projections['delta_wc'],
                                 'FCFF': projections['fcff']
                             })
                             numeric_cols = proj_df.select_dtypes(include=[np.number]).columns.tolist()
@@ -9642,7 +9642,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 'Year': [f"Year {y}" for y in projections['year']],
                                 'NOPAT': projections['nopat'],
                                 '- CapEx': [-c for c in projections['capex']],
-                                '- Δ WC': [-wc for wc in projections['change_wc']],
+                                '- Δ WC': [-wc for wc in projections['delta_wc']],
                                 '= FCFF': projections['fcff']
                             })
                             numeric_cols = fcf_df.select_dtypes(include=[np.number]).columns.tolist()
@@ -9675,23 +9675,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         with tabs[tab_idx]:
                             st.subheader("🎯 WACC Calculation")
                             
-                            # WACC Pie Chart
+                            # WACC Breakdown Chart
                             try:
-                                import plotly.graph_objects as go
-                                
-                                # Calculate weights
-                                total_capital = wacc_details['market_value_equity'] + wacc_details['market_value_debt']
-                                equity_weight = (wacc_details['market_value_equity'] / total_capital * 100) if total_capital > 0 else 0
-                                debt_weight = (wacc_details['market_value_debt'] / total_capital * 100) if total_capital > 0 else 0
-                                
-                                fig = go.Figure(data=[go.Pie(
-                                    labels=['Equity', 'Debt'],
-                                    values=[equity_weight, debt_weight],
-                                    hole=0.3,
-                                    marker_colors=['#1f77b4', '#ff7f0e']
-                                )])
-                                fig.update_layout(title="Capital Structure", height=400)
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.plotly_chart(create_wacc_breakdown_chart(wacc_details), use_container_width=True)
                             except Exception as e:
                                 st.error(f"WACC chart error: {str(e)}")
                             
@@ -9736,20 +9722,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             
                             # Waterfall Chart
                             try:
-                                fig = go.Figure(go.Waterfall(
-                                    name="DCF Waterfall",
-                                    orientation="v",
-                                    measure=["relative", "relative", "total"],
-                                    x=["PV of Projected FCFF", "PV of Terminal Value", "Enterprise Value"],
-                                    textposition="outside",
-                                    text=[f"₹{valuation['sum_pv_fcff']:.2f}L", 
-                                          f"₹{valuation['pv_terminal_value']:.2f}L",
-                                          f"₹{valuation['enterprise_value']:.2f}L"],
-                                    y=[valuation['sum_pv_fcff'], valuation['pv_terminal_value'], 0],
-                                    connector={"line":{"color":"rgb(63, 63, 63)"}},
-                                ))
-                                fig.update_layout(title="DCF Valuation Waterfall", showlegend=False, height=500, yaxis_title="Value (₹ Lacs)")
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.plotly_chart(create_waterfall_chart(valuation), use_container_width=True)
                             except Exception as e:
                                 st.error(f"Waterfall chart error: {str(e)}")
                             
