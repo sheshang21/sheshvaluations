@@ -2943,14 +2943,39 @@ def get_risk_free_rate(custom_ticker=None):
             return fallback, debug
         
         # Extract Close prices
-        if 'Close' not in gsec_data.columns:
-            debug.append(f"❌ **DEBUG**: 'Close' column not found. Available columns: {list(gsec_data.columns)}")
+        debug.append(f"📊 **DEBUG**: Column structure: {gsec_data.columns.tolist()}")
+        
+        # Handle both single-level and multi-level column indexes
+        try:
+            if 'Close' in gsec_data.columns:
+                close_data = gsec_data['Close']
+            elif ('Close', ticker) in gsec_data.columns:
+                close_data = gsec_data[('Close', ticker)]
+            else:
+                # Try to get first Close column if multi-index
+                close_cols = [col for col in gsec_data.columns if 'Close' in str(col)]
+                if close_cols:
+                    close_data = gsec_data[close_cols[0]]
+                else:
+                    debug.append(f"❌ **DEBUG**: 'Close' column not found. Available columns: {gsec_data.columns.tolist()}")
+                    fallback = 6.83
+                    debug.append(f"⚠️ Using fallback: {fallback}%")
+                    return fallback, debug
+            
+            # If close_data is a DataFrame (multi-column), take the first column
+            if isinstance(close_data, pd.DataFrame):
+                debug.append(f"📊 **DEBUG**: Close data is DataFrame with shape {close_data.shape}, taking first column")
+                close_data = close_data.iloc[:, 0]
+            
+            # Now close_data should be a Series, convert to list
+            yields = close_data.dropna().tolist()
+            debug.append(f"📈 **DEBUG**: Extracted {len(yields)} valid yield values")
+            
+        except Exception as e:
+            debug.append(f"❌ **DEBUG**: Error extracting Close data: {str(e)}")
             fallback = 6.83
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
-        
-        yields = gsec_data['Close'].dropna().tolist()
-        debug.append(f"📈 **DEBUG**: Extracted {len(yields)} valid yield values")
         
         if not yields or len(yields) < 5:
             debug.append(f"⚠️ **DEBUG**: Insufficient valid yields after dropna: {len(yields)}")
