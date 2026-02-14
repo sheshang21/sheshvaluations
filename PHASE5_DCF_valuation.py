@@ -5453,8 +5453,9 @@ def main():
         st.markdown("### 🏛️ Risk-Free Rate Configuration")
         st.info("💡 Default: 6.83%. Enter a Yahoo Finance ticker below and click Fetch to update from live data.")
         
-        # Get current value from session state
-        current_rf_rate = st.session_state.get('cached_rf_rate_listed', 6.83)
+        # Initialize if not exists
+        if 'cached_rf_rate_listed' not in st.session_state:
+            st.session_state.cached_rf_rate_listed = 6.83
         
         rf_col1, rf_col2, rf_col3 = st.columns([3, 2, 1])
         with rf_col1:
@@ -5465,19 +5466,19 @@ def main():
                 help="Default: NIFTYGS10YR.NS (India 10Y G-Sec Index)"
             )
         with rf_col2:
-            st.metric("Current RF Rate", f"{current_rf_rate:.2f}%")
+            st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_listed:.2f}%")
         with rf_col3:
             st.write("")
             st.write("")
             if st.button("🔄 Fetch", key='refresh_rf_listed_top'):
                 with st.spinner("Fetching from Yahoo Finance..."):
                     ticker_to_use = custom_rf_ticker_listed.strip() if custom_rf_ticker_listed.strip() else None
-                    st.write(f"DEBUG: Fetching from ticker: {ticker_to_use}")
                     fetched_rate = get_risk_free_rate(ticker_to_use)
-                    st.write(f"DEBUG: Fetched rate: {fetched_rate}")
                     st.session_state.cached_rf_rate_listed = fetched_rate
-                    st.write(f"DEBUG: Session state updated to: {st.session_state.cached_rf_rate_listed}")
-                st.success(f"✓ Updated to {fetched_rate:.2f}%")
+                    # Force update the manual input field
+                    if 'manual_rf_listed' in st.session_state:
+                        del st.session_state['manual_rf_listed']
+                st.success(f"✓ Updated to {st.session_state.cached_rf_rate_listed:.2f}%")
                 st.rerun()
         
         st.markdown("---")
@@ -5715,22 +5716,22 @@ def main():
             # Risk-free rate override
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
             
-            # Get cached value (initialized at startup)
-            auto_rf_rate = st.session_state.get('cached_rf_rate_listed', 6.83)
-            
-            # Rate input (ticker input is now at TOP of page)
+            # CRITICAL FIX: Use session state value directly, not a separate variable
+            # This ensures the fetched value is actually used
             manual_rf_rate = st.number_input(
-                f"Risk-Free Rate (%) - Auto: {auto_rf_rate:.2f}%",
+                f"Risk-Free Rate (%)",
                 min_value=0.0,
                 max_value=20.0,
-                value=auto_rf_rate,
+                value=st.session_state.get('cached_rf_rate_listed', 6.83),
                 step=0.1,
                 key='manual_rf_listed',
-                help="Auto-fetched from ticker above. Override manually if needed."
+                help="Auto-fetched from ticker above. You can manually edit this value."
             )
             
-            if abs(manual_rf_rate - auto_rf_rate) > 0.05:
-                st.info(f"💡 Using custom: {manual_rf_rate:.2f}% (Auto: {auto_rf_rate:.2f}%)")
+            # Update session state if user manually changes it
+            if abs(manual_rf_rate - st.session_state.get('cached_rf_rate_listed', 6.83)) > 0.05:
+                st.session_state.cached_rf_rate_listed = manual_rf_rate
+                st.info(f"💡 Using custom rate: {manual_rf_rate:.2f}%")
         
             # Manual discount rate override
             st.markdown("**💰 Discount Rate Override (Optional)**")
@@ -8521,6 +8522,41 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
     
     elif mode == "Unlisted Company (Excel Upload)":
         st.subheader("📄 Unlisted Company Valuation")
+        
+        # ===== RISK-FREE RATE TICKER - AT THE TOP, ALWAYS VISIBLE =====
+        st.markdown("### 🏛️ Risk-Free Rate Configuration")
+        st.info("💡 Default: 6.83%. Enter a Yahoo Finance ticker below and click Fetch to update from live data.")
+        
+        # Initialize if not exists
+        if 'cached_rf_rate_unlisted' not in st.session_state:
+            st.session_state.cached_rf_rate_unlisted = 6.83
+        
+        rf_col1, rf_col2, rf_col3 = st.columns([3, 2, 1])
+        with rf_col1:
+            custom_rf_ticker_unlisted = st.text_input(
+                "Yahoo Finance Ticker for Risk-Free Rate",
+                value="NIFTYGS10YR.NS",
+                key='custom_rf_ticker_unlisted_top',
+                help="Default: NIFTYGS10YR.NS (India 10Y G-Sec Index)"
+            )
+        with rf_col2:
+            st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_unlisted:.2f}%")
+        with rf_col3:
+            st.write("")
+            st.write("")
+            if st.button("🔄 Fetch", key='refresh_rf_unlisted_top'):
+                with st.spinner("Fetching from Yahoo Finance..."):
+                    ticker_to_use = custom_rf_ticker_unlisted.strip() if custom_rf_ticker_unlisted.strip() else None
+                    fetched_rate = get_risk_free_rate(ticker_to_use)
+                    st.session_state.cached_rf_rate_unlisted = fetched_rate
+                    # Force update the manual input field
+                    if 'manual_rf_unlisted' in st.session_state:
+                        del st.session_state['manual_rf_unlisted']
+                st.success(f"✓ Updated to {st.session_state.cached_rf_rate_unlisted:.2f}%")
+                st.rerun()
+        
+        st.markdown("---")
+        # ===== END RF RATE CONFIG =====
     
         # Template download section
         st.markdown("#### 📥 Download Excel Template")
@@ -8669,6 +8705,23 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             num_shares = st.number_input("Number of Shares Outstanding:", min_value=1, value=100, step=1)
             tax_rate = st.number_input("Tax Rate (%):", min_value=0.0, max_value=100.0, value=25.0, step=0.5)
             terminal_growth = st.number_input("Terminal Growth Rate (%):", min_value=0.0, max_value=10.0, value=4.0, step=0.5)
+            
+            # Risk-free rate manual input
+            st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
+            manual_rf_rate = st.number_input(
+                f"Risk-Free Rate (%)",
+                min_value=0.0,
+                max_value=20.0,
+                value=st.session_state.get('cached_rf_rate_unlisted', 6.83),
+                step=0.1,
+                key='manual_rf_unlisted',
+                help="Auto-fetched from ticker above. You can manually edit this value."
+            )
+            
+            # Update session state if user manually changes it
+            if abs(manual_rf_rate - st.session_state.get('cached_rf_rate_unlisted', 6.83)) > 0.05:
+                st.session_state.cached_rf_rate_unlisted = manual_rf_rate
+                st.info(f"💡 Using custom rate: {manual_rf_rate:.2f}%")
     
         with st.expander("⚙️ Advanced Projection Assumptions - FULL CONTROL"):
             st.info("💡 **Complete Control:** Override ANY projection parameter below. Leave at 0 or blank for auto-calculation from historical data.")
@@ -8884,7 +8937,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     )
                 
                     # Calculate WACC (unlisted companies use auto-fetched risk-free rate)
-                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=peer_tickers, manual_rf_rate=None)
+                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=peer_tickers, manual_rf_rate=manual_rf_rate)
                 
                     # DCF Valuation
                     # Extract cash balance
@@ -9392,8 +9445,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         st.markdown("### 🏛️ Risk-Free Rate Configuration")
         st.info("💡 Default: 6.83%. Enter a Yahoo Finance ticker below and click Fetch to update from live data.")
         
-        # Get current value from session state
-        current_rf_rate_screener = st.session_state.get('cached_rf_rate_screener', 6.83)
+        # Initialize if not exists
+        if 'cached_rf_rate_screener' not in st.session_state:
+            st.session_state.cached_rf_rate_screener = 6.83
         
         rf_col1, rf_col2, rf_col3 = st.columns([3, 2, 1])
         with rf_col1:
@@ -9404,7 +9458,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 help="Default: NIFTYGS10YR.NS (India 10Y G-Sec Index)"
             )
         with rf_col2:
-            st.metric("Current RF Rate", f"{current_rf_rate_screener:.2f}%")
+            st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_screener:.2f}%")
         with rf_col3:
             st.write("")
             st.write("")
@@ -9413,7 +9467,10 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
                     fetched_rate = get_risk_free_rate(ticker_to_use)
                     st.session_state.cached_rf_rate_screener = fetched_rate
-                st.success(f"✓ Updated to {fetched_rate:.2f}%")
+                    # Force update the manual input field
+                    if 'manual_rf_screener' in st.session_state:
+                        del st.session_state['manual_rf_screener']
+                st.success(f"✓ Updated to {st.session_state.cached_rf_rate_screener:.2f}%")
                 st.rerun()
         
         st.markdown("---")
@@ -9603,22 +9660,21 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             # Risk-free rate override
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
             
-            # Get cached value (configured at top of page)
-            auto_rf_rate_screener = st.session_state.get('cached_rf_rate_screener', 6.83)
-            
-            # Rate input (ticker input is now at TOP of page)
+            # CRITICAL FIX: Use session state value directly
             manual_rf_rate_screener = st.number_input(
-                f"Risk-Free Rate (%) - Auto: {auto_rf_rate_screener:.2f}%",
+                f"Risk-Free Rate (%)",
                 min_value=0.0,
                 max_value=20.0,
-                value=auto_rf_rate_screener,
+                value=st.session_state.get('cached_rf_rate_screener', 6.83),
                 step=0.1,
                 key='manual_rf_screener',
-                help="Auto-fetched from ticker above. Override manually if needed."
+                help="Auto-fetched from ticker above. You can manually edit this value."
             )
             
-            if abs(manual_rf_rate_screener - auto_rf_rate_screener) > 0.05:
-                st.info(f"💡 Using custom: {manual_rf_rate_screener:.2f}% (Auto: {auto_rf_rate_screener:.2f}%)")
+            # Update session state if user manually changes it
+            if abs(manual_rf_rate_screener - st.session_state.get('cached_rf_rate_screener', 6.83)) > 0.05:
+                st.session_state.cached_rf_rate_screener = manual_rf_rate_screener
+                st.info(f"💡 Using custom rate: {manual_rf_rate_screener:.2f}%")
             
             # Manual discount rate override
             st.markdown("---")
