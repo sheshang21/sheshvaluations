@@ -2907,84 +2907,84 @@ def get_risk_free_rate(custom_ticker=None):
     Uses NIFTYGS10YR.NS (Nifty 10Y G-Sec Index) by default.
     
     Returns:
-        float: Risk-free rate percentage, or fallback of 6.83%
+        tuple: (rate, debug_messages_list)
     """
-    import streamlit as st
     from datetime import datetime, timedelta
     import yfinance as yf
     
     ticker = custom_ticker if custom_ticker else 'NIFTYGS10YR.NS'
+    debug = []
     
-    st.write(f"🔍 **DEBUG**: Starting RF rate fetch for ticker: `{ticker}`")
+    debug.append(f"🔍 **DEBUG**: Starting RF rate fetch for ticker: `{ticker}`")
     
     try:
         # Fetch historical data from Yahoo Finance
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365*10)  # 10 years max
         
-        st.write(f"📅 **DEBUG**: Fetching data from {start_date.date()} to {end_date.date()}")
+        debug.append(f"📅 **DEBUG**: Fetching data from {start_date.date()} to {end_date.date()}")
         
         # Use yf.download directly (same as get_market_return)
         gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
         
-        st.write(f"📊 **DEBUG**: Downloaded {len(gsec_data)} rows of data")
+        debug.append(f"📊 **DEBUG**: Downloaded {len(gsec_data)} rows of data")
         
         if gsec_data.empty:
-            st.error(f"❌ **DEBUG**: No data returned for ticker {ticker}")
-            st.warning("⚠️ This ticker may not exist or may not have historical data")
+            debug.append(f"❌ **DEBUG**: No data returned for ticker {ticker}")
+            debug.append("⚠️ This ticker may not exist or may not have historical data")
             fallback = 6.83
-            st.warning(f"⚠️ Using fallback: {fallback}%")
-            return fallback
+            debug.append(f"⚠️ Using fallback: {fallback}%")
+            return fallback, debug
         
         if len(gsec_data) < 5:
-            st.warning(f"⚠️ **DEBUG**: Only {len(gsec_data)} rows returned (need at least 5)")
+            debug.append(f"⚠️ **DEBUG**: Only {len(gsec_data)} rows returned (need at least 5)")
             fallback = 6.83
-            st.warning(f"⚠️ Using fallback: {fallback}%")
-            return fallback
+            debug.append(f"⚠️ Using fallback: {fallback}%")
+            return fallback, debug
         
         # Extract Close prices
         if 'Close' not in gsec_data.columns:
-            st.error(f"❌ **DEBUG**: 'Close' column not found. Available columns: {list(gsec_data.columns)}")
+            debug.append(f"❌ **DEBUG**: 'Close' column not found. Available columns: {list(gsec_data.columns)}")
             fallback = 6.83
-            st.warning(f"⚠️ Using fallback: {fallback}%")
-            return fallback
+            debug.append(f"⚠️ Using fallback: {fallback}%")
+            return fallback, debug
         
         yields = gsec_data['Close'].dropna().tolist()
-        st.write(f"📈 **DEBUG**: Extracted {len(yields)} valid yield values")
+        debug.append(f"📈 **DEBUG**: Extracted {len(yields)} valid yield values")
         
         if not yields or len(yields) < 5:
-            st.warning(f"⚠️ **DEBUG**: Insufficient valid yields after dropna: {len(yields)}")
+            debug.append(f"⚠️ **DEBUG**: Insufficient valid yields after dropna: {len(yields)}")
             fallback = 6.83
-            st.warning(f"⚠️ Using fallback: {fallback}%")
-            return fallback
+            debug.append(f"⚠️ Using fallback: {fallback}%")
+            return fallback, debug
         
         # Use last 90 days for average
         recent_yields = yields[-min(90, len(yields)):]
         avg_yield = sum(recent_yields) / len(recent_yields)
         latest_yield = yields[-1]
         
-        st.write(f"📊 **DEBUG**: Calculated avg yield: {avg_yield:.2f}% (last 90 days)")
-        st.write(f"📊 **DEBUG**: Latest yield: {latest_yield:.2f}%")
+        debug.append(f"📊 **DEBUG**: Calculated avg yield: {avg_yield:.2f}% (last 90 days)")
+        debug.append(f"📊 **DEBUG**: Latest yield: {latest_yield:.2f}%")
         
         # Sanity check
         if not (4.0 <= avg_yield <= 15.0):
-            st.warning(f"⚠️ **DEBUG**: Yield {avg_yield:.2f}% outside expected range (4-15%)")
-            st.warning(f"⚠️ This may indicate data quality issues")
+            debug.append(f"⚠️ **DEBUG**: Yield {avg_yield:.2f}% outside expected range (4-15%)")
+            debug.append(f"⚠️ This may indicate data quality issues")
             fallback = 6.83
-            st.warning(f"⚠️ Using fallback: {fallback}%")
-            return fallback
+            debug.append(f"⚠️ Using fallback: {fallback}%")
+            return fallback, debug
         
-        st.success(f"✅ **DEBUG**: Successfully fetched {ticker}: Avg {avg_yield:.2f}% (Last: {latest_yield:.2f}%)")
-        return round(avg_yield, 2)
+        debug.append(f"✅ **DEBUG**: Successfully fetched {ticker}: Avg {avg_yield:.2f}% (Last: {latest_yield:.2f}%)")
+        return round(avg_yield, 2), debug
         
     except Exception as e:
-        st.error(f"❌ **DEBUG**: Exception occurred: {type(e).__name__}")
-        st.error(f"❌ **DEBUG**: Error message: {str(e)}")
+        debug.append(f"❌ **DEBUG**: Exception occurred: {type(e).__name__}")
+        debug.append(f"❌ **DEBUG**: Error message: {str(e)}")
         import traceback
-        st.error(f"❌ **DEBUG**: Traceback:\n```\n{traceback.format_exc()}\n```")
+        debug.append(f"❌ **DEBUG**: Traceback:\n```\n{traceback.format_exc()}\n```")
         fallback = 6.83
-        st.warning(f"⚠️ Using fallback: {fallback}%")
-        return fallback
+        debug.append(f"⚠️ Using fallback: {fallback}%")
+        return fallback, debug
 
 def get_market_return():
     """Calculate market return from Sensex historical data"""
@@ -5528,34 +5528,49 @@ def main():
                 # Increment click counter FIRST
                 st.session_state.rf_fetch_click_count_listed += 1
                 
-                st.write("---")
-                st.write(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_listed} - LISTED MODE**")
-                st.write(f"📝 Input ticker: `{custom_rf_ticker_listed}`")
+                # Store debug output in session state so it persists across reruns
+                debug_output = []
+                debug_output.append(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_listed} - LISTED MODE**")
+                debug_output.append(f"📝 Input ticker: `{custom_rf_ticker_listed}`")
                 
                 ticker_to_use = custom_rf_ticker_listed.strip() if custom_rf_ticker_listed.strip() else None
-                st.write(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
+                debug_output.append(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
                 
-                with st.spinner("Fetching from Yahoo Finance..."):
-                    st.write("⏳ Calling get_risk_free_rate()...")
-                    fetched_rate = get_risk_free_rate(ticker_to_use)
-                    st.write(f"✅ Function returned: {fetched_rate}%")
-                    
-                    st.write(f"💾 Updating session state...")
-                    st.write(f"   - Before: {st.session_state.get('cached_rf_rate_listed', 'NOT SET')}")
-                    st.session_state.cached_rf_rate_listed = fetched_rate
-                    st.write(f"   - After: {st.session_state.cached_rf_rate_listed}")
-                    
-                    # Force update the manual input field
-                    st.write(f"🔄 Clearing manual input widget state...")
-                    if 'manual_rf_listed' in st.session_state:
-                        del st.session_state['manual_rf_listed']
-                        st.write(f"   - Widget state cleared")
-                    else:
-                        st.write(f"   - Widget state was not set")
+                debug_output.append("⏳ Calling get_risk_free_rate()...")
+                fetched_rate, fetch_debug = get_risk_free_rate(ticker_to_use)
                 
-                st.success(f"✓ Updated to {st.session_state.cached_rf_rate_listed:.2f}%")
-                st.write("🔄 Triggering page rerun...")
+                # Add all debug messages from the function
+                debug_output.extend(fetch_debug)
+                
+                debug_output.append(f"✅ Function returned: {fetched_rate}%")
+                
+                debug_output.append(f"💾 Updating session state...")
+                debug_output.append(f"   - Before: {st.session_state.get('cached_rf_rate_listed', 'NOT SET')}")
+                st.session_state.cached_rf_rate_listed = fetched_rate
+                debug_output.append(f"   - After: {st.session_state.cached_rf_rate_listed}")
+                
+                # Force update the manual input field
+                debug_output.append(f"🔄 Clearing manual input widget state...")
+                if 'manual_rf_listed' in st.session_state:
+                    del st.session_state['manual_rf_listed']
+                    debug_output.append(f"   - Widget state cleared")
+                else:
+                    debug_output.append(f"   - Widget state was not set")
+                
+                # Store debug output in session state
+                st.session_state.rf_fetch_debug_listed = debug_output
+                st.session_state.rf_fetch_success_listed = True
+                
+                # Rerun to update UI
                 st.rerun()
+        
+        # Display debug output if available (persists across reruns)
+        if st.session_state.get('rf_fetch_debug_listed'):
+            with st.expander("📋 Last Fetch Debug Output", expanded=True):
+                for line in st.session_state.rf_fetch_debug_listed:
+                    st.write(line)
+                if st.session_state.get('rf_fetch_success_listed'):
+                    st.success(f"✓ Successfully updated to {st.session_state.cached_rf_rate_listed:.2f}%")
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
@@ -8637,34 +8652,49 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 # Increment click counter FIRST
                 st.session_state.rf_fetch_click_count_unlisted += 1
                 
-                st.write("---")
-                st.write(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_unlisted} - UNLISTED MODE**")
-                st.write(f"📝 Input ticker: `{custom_rf_ticker_unlisted}`")
+                # Store debug output in session state so it persists across reruns
+                debug_output = []
+                debug_output.append(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_unlisted} - UNLISTED MODE**")
+                debug_output.append(f"📝 Input ticker: `{custom_rf_ticker_unlisted}`")
                 
                 ticker_to_use = custom_rf_ticker_unlisted.strip() if custom_rf_ticker_unlisted.strip() else None
-                st.write(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
+                debug_output.append(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
                 
-                with st.spinner("Fetching from Yahoo Finance..."):
-                    st.write("⏳ Calling get_risk_free_rate()...")
-                    fetched_rate = get_risk_free_rate(ticker_to_use)
-                    st.write(f"✅ Function returned: {fetched_rate}%")
-                    
-                    st.write(f"💾 Updating session state...")
-                    st.write(f"   - Before: {st.session_state.get('cached_rf_rate_unlisted', 'NOT SET')}")
-                    st.session_state.cached_rf_rate_unlisted = fetched_rate
-                    st.write(f"   - After: {st.session_state.cached_rf_rate_unlisted}")
-                    
-                    # Force update the manual input field
-                    st.write(f"🔄 Clearing manual input widget state...")
-                    if 'manual_rf_unlisted' in st.session_state:
-                        del st.session_state['manual_rf_unlisted']
-                        st.write(f"   - Widget state cleared")
-                    else:
-                        st.write(f"   - Widget state was not set")
+                debug_output.append("⏳ Calling get_risk_free_rate()...")
+                fetched_rate, fetch_debug = get_risk_free_rate(ticker_to_use)
                 
-                st.success(f"✓ Updated to {st.session_state.cached_rf_rate_unlisted:.2f}%")
-                st.write("🔄 Triggering page rerun...")
+                # Add all debug messages from the function
+                debug_output.extend(fetch_debug)
+                
+                debug_output.append(f"✅ Function returned: {fetched_rate}%")
+                
+                debug_output.append(f"💾 Updating session state...")
+                debug_output.append(f"   - Before: {st.session_state.get('cached_rf_rate_unlisted', 'NOT SET')}")
+                st.session_state.cached_rf_rate_unlisted = fetched_rate
+                debug_output.append(f"   - After: {st.session_state.cached_rf_rate_unlisted}")
+                
+                # Force update the manual input field
+                debug_output.append(f"🔄 Clearing manual input widget state...")
+                if 'manual_rf_unlisted' in st.session_state:
+                    del st.session_state['manual_rf_unlisted']
+                    debug_output.append(f"   - Widget state cleared")
+                else:
+                    debug_output.append(f"   - Widget state was not set")
+                
+                # Store debug output in session state
+                st.session_state.rf_fetch_debug_unlisted = debug_output
+                st.session_state.rf_fetch_success_unlisted = True
+                
+                # Rerun to update UI
                 st.rerun()
+        
+        # Display debug output if available (persists across reruns)
+        if st.session_state.get('rf_fetch_debug_unlisted'):
+            with st.expander("📋 Last Fetch Debug Output", expanded=True):
+                for line in st.session_state.rf_fetch_debug_unlisted:
+                    st.write(line)
+                if st.session_state.get('rf_fetch_success_unlisted'):
+                    st.success(f"✓ Successfully updated to {st.session_state.cached_rf_rate_unlisted:.2f}%")
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
@@ -9590,34 +9620,49 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 # Increment click counter FIRST
                 st.session_state.rf_fetch_click_count_screener += 1
                 
-                st.write("---")
-                st.write(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_screener} - SCREENER MODE**")
-                st.write(f"📝 Input ticker: `{custom_rf_ticker_screener}`")
+                # Store debug output in session state so it persists across reruns
+                debug_output = []
+                debug_output.append(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rf_fetch_click_count_screener} - SCREENER MODE**")
+                debug_output.append(f"📝 Input ticker: `{custom_rf_ticker_screener}`")
                 
                 ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
-                st.write(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
+                debug_output.append(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
                 
-                with st.spinner("Fetching from Yahoo Finance..."):
-                    st.write("⏳ Calling get_risk_free_rate()...")
-                    fetched_rate = get_risk_free_rate(ticker_to_use)
-                    st.write(f"✅ Function returned: {fetched_rate}%")
-                    
-                    st.write(f"💾 Updating session state...")
-                    st.write(f"   - Before: {st.session_state.get('cached_rf_rate_screener', 'NOT SET')}")
-                    st.session_state.cached_rf_rate_screener = fetched_rate
-                    st.write(f"   - After: {st.session_state.cached_rf_rate_screener}")
-                    
-                    # Force update the manual input field
-                    st.write(f"🔄 Clearing manual input widget state...")
-                    if 'manual_rf_screener' in st.session_state:
-                        del st.session_state['manual_rf_screener']
-                        st.write(f"   - Widget state cleared")
-                    else:
-                        st.write(f"   - Widget state was not set")
+                debug_output.append("⏳ Calling get_risk_free_rate()...")
+                fetched_rate, fetch_debug = get_risk_free_rate(ticker_to_use)
                 
-                st.success(f"✓ Updated to {st.session_state.cached_rf_rate_screener:.2f}%")
-                st.write("🔄 Triggering page rerun...")
+                # Add all debug messages from the function
+                debug_output.extend(fetch_debug)
+                
+                debug_output.append(f"✅ Function returned: {fetched_rate}%")
+                
+                debug_output.append(f"💾 Updating session state...")
+                debug_output.append(f"   - Before: {st.session_state.get('cached_rf_rate_screener', 'NOT SET')}")
+                st.session_state.cached_rf_rate_screener = fetched_rate
+                debug_output.append(f"   - After: {st.session_state.cached_rf_rate_screener}")
+                
+                # Force update the manual input field
+                debug_output.append(f"🔄 Clearing manual input widget state...")
+                if 'manual_rf_screener' in st.session_state:
+                    del st.session_state['manual_rf_screener']
+                    debug_output.append(f"   - Widget state cleared")
+                else:
+                    debug_output.append(f"   - Widget state was not set")
+                
+                # Store debug output in session state
+                st.session_state.rf_fetch_debug_screener = debug_output
+                st.session_state.rf_fetch_success_screener = True
+                
+                # Rerun to update UI
                 st.rerun()
+        
+        # Display debug output if available (persists across reruns)
+        if st.session_state.get('rf_fetch_debug_screener'):
+            with st.expander("📋 Last Fetch Debug Output", expanded=True):
+                for line in st.session_state.rf_fetch_debug_screener:
+                    st.write(line)
+                if st.session_state.get('rf_fetch_success_screener'):
+                    st.success(f"✓ Successfully updated to {st.session_state.cached_rf_rate_screener:.2f}%")
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
