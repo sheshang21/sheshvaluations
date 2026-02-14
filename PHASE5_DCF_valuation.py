@@ -2905,37 +2905,86 @@ def get_risk_free_rate(custom_ticker=None):
     """
     Get risk-free rate from India 10-year Government Bond yields using Yahoo Finance.
     Uses NIFTYGS10YR.NS (Nifty 10Y G-Sec Index) by default.
+    
+    Returns:
+        float: Risk-free rate percentage, or fallback of 6.83%
     """
+    import streamlit as st
     from datetime import datetime, timedelta
+    import yfinance as yf
     
     ticker = custom_ticker if custom_ticker else 'NIFTYGS10YR.NS'
+    
+    st.write(f"🔍 **DEBUG**: Starting RF rate fetch for ticker: `{ticker}`")
     
     try:
         # Fetch historical data from Yahoo Finance
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365*10)  # 10 years max
         
+        st.write(f"📅 **DEBUG**: Fetching data from {start_date.date()} to {end_date.date()}")
+        
+        # Use yf.download directly (same as get_market_return)
         gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
         
-        if not gsec_data.empty and len(gsec_data) >= 5:
-            yields = gsec_data['Close'].dropna().tolist()
-            
-            if yields and len(yields) >= 5:
-                # Use last 90 days for average
-                recent_yields = yields[-min(90, len(yields)):]
-                avg_yield = sum(recent_yields) / len(recent_yields)
-                latest_yield = yields[-1]
-                
-                if 4.0 <= avg_yield <= 15.0:
-                    print(f"✓ Fetched {ticker}: Avg {avg_yield:.2f}% (Last: {latest_yield:.2f}%)")
-                    return round(avg_yield, 2)
+        st.write(f"📊 **DEBUG**: Downloaded {len(gsec_data)} rows of data")
+        
+        if gsec_data.empty:
+            st.error(f"❌ **DEBUG**: No data returned for ticker {ticker}")
+            st.warning("⚠️ This ticker may not exist or may not have historical data")
+            fallback = 6.83
+            st.warning(f"⚠️ Using fallback: {fallback}%")
+            return fallback
+        
+        if len(gsec_data) < 5:
+            st.warning(f"⚠️ **DEBUG**: Only {len(gsec_data)} rows returned (need at least 5)")
+            fallback = 6.83
+            st.warning(f"⚠️ Using fallback: {fallback}%")
+            return fallback
+        
+        # Extract Close prices
+        if 'Close' not in gsec_data.columns:
+            st.error(f"❌ **DEBUG**: 'Close' column not found. Available columns: {list(gsec_data.columns)}")
+            fallback = 6.83
+            st.warning(f"⚠️ Using fallback: {fallback}%")
+            return fallback
+        
+        yields = gsec_data['Close'].dropna().tolist()
+        st.write(f"📈 **DEBUG**: Extracted {len(yields)} valid yield values")
+        
+        if not yields or len(yields) < 5:
+            st.warning(f"⚠️ **DEBUG**: Insufficient valid yields after dropna: {len(yields)}")
+            fallback = 6.83
+            st.warning(f"⚠️ Using fallback: {fallback}%")
+            return fallback
+        
+        # Use last 90 days for average
+        recent_yields = yields[-min(90, len(yields)):]
+        avg_yield = sum(recent_yields) / len(recent_yields)
+        latest_yield = yields[-1]
+        
+        st.write(f"📊 **DEBUG**: Calculated avg yield: {avg_yield:.2f}% (last 90 days)")
+        st.write(f"📊 **DEBUG**: Latest yield: {latest_yield:.2f}%")
+        
+        # Sanity check
+        if not (4.0 <= avg_yield <= 15.0):
+            st.warning(f"⚠️ **DEBUG**: Yield {avg_yield:.2f}% outside expected range (4-15%)")
+            st.warning(f"⚠️ This may indicate data quality issues")
+            fallback = 6.83
+            st.warning(f"⚠️ Using fallback: {fallback}%")
+            return fallback
+        
+        st.success(f"✅ **DEBUG**: Successfully fetched {ticker}: Avg {avg_yield:.2f}% (Last: {latest_yield:.2f}%)")
+        return round(avg_yield, 2)
+        
     except Exception as e:
-        print(f"⚠️ Yahoo Finance error: {str(e)[:100]}")
-    
-    # Fallback
-    fallback = 6.83
-    print(f"⚠️ Using fallback: {fallback}%")
-    return fallback
+        st.error(f"❌ **DEBUG**: Exception occurred: {type(e).__name__}")
+        st.error(f"❌ **DEBUG**: Error message: {str(e)}")
+        import traceback
+        st.error(f"❌ **DEBUG**: Traceback:\n```\n{traceback.format_exc()}\n```")
+        fallback = 6.83
+        st.warning(f"⚠️ Using fallback: {fallback}%")
+        return fallback
 
 def get_market_return():
     """Calculate market return from Sensex historical data"""
@@ -5471,18 +5520,44 @@ def main():
             st.write("")
             st.write("")
             if st.button("🔄 Fetch", key='refresh_rf_listed_top'):
+                st.write("---")
+                st.write("🔄 **FETCH BUTTON CLICKED - LISTED MODE**")
+                st.write(f"📝 Input ticker: `{custom_rf_ticker_listed}`")
+                
+                ticker_to_use = custom_rf_ticker_listed.strip() if custom_rf_ticker_listed.strip() else None
+                st.write(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
+                
                 with st.spinner("Fetching from Yahoo Finance..."):
-                    ticker_to_use = custom_rf_ticker_listed.strip() if custom_rf_ticker_listed.strip() else None
+                    st.write("⏳ Calling get_risk_free_rate()...")
                     fetched_rate = get_risk_free_rate(ticker_to_use)
+                    st.write(f"✅ Function returned: {fetched_rate}%")
+                    
+                    st.write(f"💾 Updating session state...")
+                    st.write(f"   - Before: {st.session_state.get('cached_rf_rate_listed', 'NOT SET')}")
                     st.session_state.cached_rf_rate_listed = fetched_rate
+                    st.write(f"   - After: {st.session_state.cached_rf_rate_listed}")
+                    
                     # Force update the manual input field
+                    st.write(f"🔄 Clearing manual input widget state...")
                     if 'manual_rf_listed' in st.session_state:
                         del st.session_state['manual_rf_listed']
+                        st.write(f"   - Widget state cleared")
+                    else:
+                        st.write(f"   - Widget state was not set")
+                
                 st.success(f"✓ Updated to {st.session_state.cached_rf_rate_listed:.2f}%")
+                st.write("🔄 Triggering page rerun...")
                 st.rerun()
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
+        
+        # DEBUG: Show session state
+        with st.expander("🐛 DEBUG: Session State Values (Listed)", expanded=False):
+            st.write("**Current Session State for RF Rate:**")
+            st.write(f"- `cached_rf_rate_listed`: {st.session_state.get('cached_rf_rate_listed', 'NOT SET')}")
+            st.write(f"- `manual_rf_listed` widget: {st.session_state.get('manual_rf_listed', 'NOT SET')}")
+            st.write(f"- `custom_rf_ticker_listed_top`: {st.session_state.get('custom_rf_ticker_listed_top', 'NOT SET')}")
     
         col1, col2 = st.columns(2)
     
@@ -8545,18 +8620,44 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             st.write("")
             st.write("")
             if st.button("🔄 Fetch", key='refresh_rf_unlisted_top'):
+                st.write("---")
+                st.write("🔄 **FETCH BUTTON CLICKED - UNLISTED MODE**")
+                st.write(f"📝 Input ticker: `{custom_rf_ticker_unlisted}`")
+                
+                ticker_to_use = custom_rf_ticker_unlisted.strip() if custom_rf_ticker_unlisted.strip() else None
+                st.write(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
+                
                 with st.spinner("Fetching from Yahoo Finance..."):
-                    ticker_to_use = custom_rf_ticker_unlisted.strip() if custom_rf_ticker_unlisted.strip() else None
+                    st.write("⏳ Calling get_risk_free_rate()...")
                     fetched_rate = get_risk_free_rate(ticker_to_use)
+                    st.write(f"✅ Function returned: {fetched_rate}%")
+                    
+                    st.write(f"💾 Updating session state...")
+                    st.write(f"   - Before: {st.session_state.get('cached_rf_rate_unlisted', 'NOT SET')}")
                     st.session_state.cached_rf_rate_unlisted = fetched_rate
+                    st.write(f"   - After: {st.session_state.cached_rf_rate_unlisted}")
+                    
                     # Force update the manual input field
+                    st.write(f"🔄 Clearing manual input widget state...")
                     if 'manual_rf_unlisted' in st.session_state:
                         del st.session_state['manual_rf_unlisted']
+                        st.write(f"   - Widget state cleared")
+                    else:
+                        st.write(f"   - Widget state was not set")
+                
                 st.success(f"✓ Updated to {st.session_state.cached_rf_rate_unlisted:.2f}%")
+                st.write("🔄 Triggering page rerun...")
                 st.rerun()
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
+        
+        # DEBUG: Show session state
+        with st.expander("🐛 DEBUG: Session State Values (Unlisted)", expanded=False):
+            st.write("**Current Session State for RF Rate:**")
+            st.write(f"- `cached_rf_rate_unlisted`: {st.session_state.get('cached_rf_rate_unlisted', 'NOT SET')}")
+            st.write(f"- `manual_rf_unlisted` widget: {st.session_state.get('manual_rf_unlisted', 'NOT SET')}")
+            st.write(f"- `custom_rf_ticker_unlisted_top`: {st.session_state.get('custom_rf_ticker_unlisted_top', 'NOT SET')}")
     
         # Template download section
         st.markdown("#### 📥 Download Excel Template")
@@ -9463,18 +9564,44 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             st.write("")
             st.write("")
             if st.button("🔄 Fetch", key='refresh_rf_screener_top'):
+                st.write("---")
+                st.write("🔄 **FETCH BUTTON CLICKED - SCREENER MODE**")
+                st.write(f"📝 Input ticker: `{custom_rf_ticker_screener}`")
+                
+                ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
+                st.write(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
+                
                 with st.spinner("Fetching from Yahoo Finance..."):
-                    ticker_to_use = custom_rf_ticker_screener.strip() if custom_rf_ticker_screener.strip() else None
+                    st.write("⏳ Calling get_risk_free_rate()...")
                     fetched_rate = get_risk_free_rate(ticker_to_use)
+                    st.write(f"✅ Function returned: {fetched_rate}%")
+                    
+                    st.write(f"💾 Updating session state...")
+                    st.write(f"   - Before: {st.session_state.get('cached_rf_rate_screener', 'NOT SET')}")
                     st.session_state.cached_rf_rate_screener = fetched_rate
+                    st.write(f"   - After: {st.session_state.cached_rf_rate_screener}")
+                    
                     # Force update the manual input field
+                    st.write(f"🔄 Clearing manual input widget state...")
                     if 'manual_rf_screener' in st.session_state:
                         del st.session_state['manual_rf_screener']
+                        st.write(f"   - Widget state cleared")
+                    else:
+                        st.write(f"   - Widget state was not set")
+                
                 st.success(f"✓ Updated to {st.session_state.cached_rf_rate_screener:.2f}%")
+                st.write("🔄 Triggering page rerun...")
                 st.rerun()
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
+        
+        # DEBUG: Show session state
+        with st.expander("🐛 DEBUG: Session State Values (Screener)", expanded=False):
+            st.write("**Current Session State for RF Rate:**")
+            st.write(f"- `cached_rf_rate_screener`: {st.session_state.get('cached_rf_rate_screener', 'NOT SET')}")
+            st.write(f"- `manual_rf_screener` widget: {st.session_state.get('manual_rf_screener', 'NOT SET')}")
+            st.write(f"- `custom_rf_ticker_screener_top`: {st.session_state.get('custom_rf_ticker_screener_top', 'NOT SET')}")
         
         # Add template download button
         st.markdown("#### 📥 Download Screener Template")
