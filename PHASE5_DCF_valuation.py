@@ -2936,8 +2936,9 @@ def get_risk_free_rate(custom_ticker=None):
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
         
-        if len(gsec_data) < 5:
-            debug.append(f"⚠️ **DEBUG**: Only {len(gsec_data)} rows returned (need at least 5)")
+        if len(gsec_data) < 2:
+            debug.append(f"⚠️ **DEBUG**: Only {len(gsec_data)} rows returned (need at least 2)")
+            debug.append(f"💡 **HINT**: Try a different ticker or check if this ticker has historical data on Yahoo Finance")
             fallback = 6.83
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
@@ -2977,29 +2978,32 @@ def get_risk_free_rate(custom_ticker=None):
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
         
-        if not yields or len(yields) < 5:
+        if not yields or len(yields) < 2:
             debug.append(f"⚠️ **DEBUG**: Insufficient valid yields after dropna: {len(yields)}")
             fallback = 6.83
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
         
-        # Use last 90 days for average
-        recent_yields = yields[-min(90, len(yields)):]
+        # Use last 90 days for average (or all available data if less)
+        days_to_use = min(90, len(yields))
+        recent_yields = yields[-days_to_use:]
         avg_yield = sum(recent_yields) / len(recent_yields)
         latest_yield = yields[-1]
         
-        debug.append(f"📊 **DEBUG**: Calculated avg yield: {avg_yield:.2f}% (last 90 days)")
-        debug.append(f"📊 **DEBUG**: Latest yield: {latest_yield:.2f}%")
+        debug.append(f"📊 **DEBUG**: Using last {days_to_use} days of data")
+        debug.append(f"📊 **DEBUG**: Calculated avg: {avg_yield:.2f}% | Latest: {latest_yield:.2f}%")
         
-        # Sanity check
-        if not (4.0 <= avg_yield <= 15.0):
-            debug.append(f"⚠️ **DEBUG**: Yield {avg_yield:.2f}% outside expected range (4-15%)")
-            debug.append(f"⚠️ This may indicate data quality issues")
-            fallback = 6.83
-            debug.append(f"⚠️ Using fallback: {fallback}%")
-            return fallback, debug
+        # Informational warnings (not blocking)
+        if avg_yield < 0.1:
+            debug.append(f"💡 **INFO**: Value is very low ({avg_yield:.4f}%) - might be a percentage already divided by 100")
+        elif avg_yield > 100:
+            debug.append(f"💡 **INFO**: Value is very high ({avg_yield:.2f}) - this might be a stock price, not a yield/rate")
+            debug.append(f"💡 **SUGGESTION**: For government bonds/rates, try tickers like: ^TNX (US 10Y), ^FVX (US 5Y), or NIFTYGSEC.NS")
+        elif 15 < avg_yield <= 100:
+            debug.append(f"💡 **INFO**: Value {avg_yield:.2f}% is higher than typical government bond yields")
+            debug.append(f"💡 **SUGGESTION**: Verify this is the correct ticker for risk-free rate")
         
-        debug.append(f"✅ **DEBUG**: Successfully fetched {ticker}: Avg {avg_yield:.2f}% (Last: {latest_yield:.2f}%)")
+        debug.append(f"✅ **SUCCESS**: Fetched {ticker} - Using {avg_yield:.2f}% as risk-free rate")
         return round(avg_yield, 2), debug
         
     except Exception as e:
@@ -5525,7 +5529,7 @@ def main():
         
         # ===== RISK-FREE RATE TICKER - AT THE TOP, ALWAYS VISIBLE =====
         st.markdown("### 🏛️ Risk-Free Rate Configuration")
-        st.info("💡 Default: 6.83%. Enter a Yahoo Finance ticker below and click Fetch to update from live data.")
+        st.info("💡 **Default: 6.83%**. Enter any Yahoo Finance ticker and click Fetch. Common options: ^TNX (US 10Y), ^IRX (US 3-month), or any stock/index for custom rates.")
         
         # Initialize if not exists
         if 'cached_rf_rate_listed' not in st.session_state:
@@ -5535,9 +5539,9 @@ def main():
         with rf_col1:
             custom_rf_ticker_listed = st.text_input(
                 "Yahoo Finance Ticker for Risk-Free Rate",
-                value="NIFTYGS10YR.NS",
+                value="^TNX",
                 key='custom_rf_ticker_listed_top',
-                help="Default: NIFTYGS10YR.NS (India 10Y G-Sec Index)"
+                help="Examples: ^TNX (US 10Y Treasury), ^IRX (US 3-month T-Bill), RELIANCE.NS (stock), or any ticker"
             )
         with rf_col2:
             st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_listed:.2f}%")
@@ -8649,7 +8653,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         
         # ===== RISK-FREE RATE TICKER - AT THE TOP, ALWAYS VISIBLE =====
         st.markdown("### 🏛️ Risk-Free Rate Configuration")
-        st.info("💡 Default: 6.83%. Enter a Yahoo Finance ticker below and click Fetch to update from live data.")
+        st.info("💡 **Default: 6.83%**. Enter any Yahoo Finance ticker and click Fetch. Common options: ^TNX (US 10Y), ^IRX (US 3-month), or any stock/index for custom rates.")
         
         # Initialize if not exists
         if 'cached_rf_rate_unlisted' not in st.session_state:
@@ -8659,9 +8663,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         with rf_col1:
             custom_rf_ticker_unlisted = st.text_input(
                 "Yahoo Finance Ticker for Risk-Free Rate",
-                value="NIFTYGS10YR.NS",
+                value="^TNX",
                 key='custom_rf_ticker_unlisted_top',
-                help="Default: NIFTYGS10YR.NS (India 10Y G-Sec Index)"
+                help="Examples: ^TNX (US 10Y Treasury), ^IRX (US 3-month T-Bill), RELIANCE.NS (stock), or any ticker"
             )
         with rf_col2:
             st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_unlisted:.2f}%")
@@ -9617,7 +9621,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         
         # ===== RISK-FREE RATE TICKER - AT THE TOP, ALWAYS VISIBLE =====
         st.markdown("### 🏛️ Risk-Free Rate Configuration")
-        st.info("💡 Default: 6.83%. Enter a Yahoo Finance ticker below and click Fetch to update from live data.")
+        st.info("💡 **Default: 6.83%**. Enter any Yahoo Finance ticker and click Fetch. Common options: ^TNX (US 10Y), ^IRX (US 3-month), or any stock/index for custom rates.")
         
         # Initialize if not exists
         if 'cached_rf_rate_screener' not in st.session_state:
@@ -9627,9 +9631,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         with rf_col1:
             custom_rf_ticker_screener = st.text_input(
                 "Yahoo Finance Ticker for Risk-Free Rate",
-                value="NIFTYGS10YR.NS",
+                value="^TNX",
                 key='custom_rf_ticker_screener_top',
-                help="Default: NIFTYGS10YR.NS (India 10Y G-Sec Index)"
+                help="Examples: ^TNX (US 10Y Treasury), ^IRX (US 3-month T-Bill), RELIANCE.NS (stock), or any ticker"
             )
         with rf_col2:
             st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_screener:.2f}%")
