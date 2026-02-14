@@ -5689,15 +5689,6 @@ def main():
         # ===== END RF RATE CONFIG =====
         
         # DEBUG: Show session state
-        with st.expander("🐛 DEBUG: Session State Values (Listed)", expanded=False):
-            st.write("**Current Session State for RF Rate:**")
-            st.write(f"- `cached_rf_rate_listed`: {st.session_state.get('cached_rf_rate_listed', 'NOT SET')}")
-            st.write(f"- `manual_rf_listed` widget: {st.session_state.get('manual_rf_listed', 'NOT SET')}")
-            st.write(f"- `custom_rf_ticker_listed_top`: {st.session_state.get('custom_rf_ticker_listed_top', 'NOT SET')}")
-            st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_listed', 0)}")
-            st.write("**Current Session State for Market Return:**")
-            st.write(f"- `cached_rm_rate_listed`: {st.session_state.get('cached_rm_rate_listed', 'NOT SET')}")
-            st.write(f"- **MR Fetch button clicks**: {st.session_state.get('rm_fetch_click_count_listed', 0)}")
         
         # ===== MARKET RETURN TICKER - SIMILAR TO RF RATE =====
         st.markdown("### 📈 Market Return Configuration")
@@ -8883,17 +8874,6 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
         
-        # DEBUG: Show session state
-        with st.expander("🐛 DEBUG: Session State Values (Unlisted)", expanded=False):
-            st.write("**Current Session State for RF Rate:**")
-            st.write(f"- `cached_rf_rate_unlisted`: {st.session_state.get('cached_rf_rate_unlisted', 'NOT SET')}")
-            st.write(f"- `manual_rf_unlisted` widget: {st.session_state.get('manual_rf_unlisted', 'NOT SET')}")
-            st.write(f"- `custom_rf_ticker_unlisted_top`: {st.session_state.get('custom_rf_ticker_unlisted_top', 'NOT SET')}")
-            st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_unlisted', 0)}")
-            st.write("**Current Session State for Market Return:**")
-            st.write(f"- `cached_rm_rate_unlisted`: {st.session_state.get('cached_rm_rate_unlisted', 'NOT SET')}")
-            st.write(f"- **MR Fetch button clicks**: {st.session_state.get('rm_fetch_click_count_unlisted', 0)}")
-        
         # ===== MARKET RETURN TICKER =====
         st.markdown("### 📈 Market Return Configuration")
         st.info("💡 Use `%5E` prefix (e.g., `%5EBSESN` for Sensex). **Default**: 12.0%")
@@ -9898,17 +9878,6 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
-        
-        # DEBUG: Show session state
-        with st.expander("🐛 DEBUG: Session State Values (Screener)", expanded=False):
-            st.write("**Current Session State for RF Rate:**")
-            st.write(f"- `cached_rf_rate_screener`: {st.session_state.get('cached_rf_rate_screener', 'NOT SET')}")
-            st.write(f"- `manual_rf_screener` widget: {st.session_state.get('manual_rf_screener', 'NOT SET')}")
-            st.write(f"- `custom_rf_ticker_screener_top`: {st.session_state.get('custom_rf_ticker_screener_top', 'NOT SET')}")
-            st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_screener', 0)}")
-            st.write("**Current Session State for Market Return:**")
-            st.write(f"- `cached_rm_rate_screener`: {st.session_state.get('cached_rm_rate_screener', 'NOT SET')}")
-            st.write(f"- **MR Fetch button clicks**: {st.session_state.get('rm_fetch_click_count_screener', 0)}")
         
         # ===== MARKET RETURN TICKER =====
         st.markdown("### 📈 Market Return Configuration")
