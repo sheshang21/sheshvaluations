@@ -9097,6 +9097,27 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 key='manual_rm_unlisted',
                 help="Auto-fetched from ticker above. You can manually edit this value."
             )
+            
+            # Manual discount rate override
+            st.markdown("---")
+            st.markdown("**💰 Discount Rate Override (Optional)**")
+            manual_discount_rate_unlisted = st.number_input(
+                "Manual Discount Rate Override (%):",
+                min_value=0.0,
+                max_value=50.0,
+                value=0.0,
+                step=0.5,
+                key='manual_discount_unlisted',
+                help="⚠️ Override WACC calculation. Leave at 0 to use auto-calculated WACC."
+            )
+            if manual_discount_rate_unlisted > 0:
+                st.info(f"💡 Using manual discount rate: {manual_discount_rate_unlisted:.2f}% (Overriding WACC)")
+            
+            # Valuation models to run (RIM only, no DDM for unlisted)
+            st.markdown("**🎯 Valuation Models**")
+            run_dcf_unlisted = st.checkbox("DCF (FCFF)", value=True, key='unlisted_dcf')
+            run_rim_unlisted = st.checkbox("RIM (Residual Income)", value=True, key='unlisted_rim')
+            run_comp_unlisted = st.checkbox("Comparative Valuation", value=True, key='unlisted_comp')
     
         with st.expander("⚙️ Advanced Projection Assumptions - FULL CONTROL"):
             st.info("💡 **Complete Control:** Override ANY projection parameter below. Leave at 0 or blank for auto-calculation from historical data.")
@@ -9106,9 +9127,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             with col1:
                 rev_growth_override_unlisted = st.number_input(
                     "Revenue Growth (%/year)", 
-                    min_value=0.0, max_value=100.0, value=0.0, step=0.5,
+                    min_value=0.0, max_value=200.0, value=0.0, step=0.5,
                     key='unlisted_rev_growth',
-                    help="0 = Auto from historical CAGR"
+                    help="0 = Auto from historical CAGR. Override to use custom growth rate."
                 )
             with col2:
                 opex_margin_override_unlisted = st.number_input(
@@ -9130,9 +9151,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             with col4:
                 capex_ratio_override_unlisted = st.number_input(
                     "CapEx/Revenue (%)", 
-                    min_value=0.0, max_value=50.0, value=0.0, step=0.5,
+                    min_value=0.0, max_value=200.0, value=0.0, step=0.5,
                     key='unlisted_capex_ratio',
-                    help="0 = Auto from historical average"
+                    help="0 = Auto from historical average. Override for custom CapEx assumptions."
                 )
             with col5:
                 depreciation_rate_override_unlisted = st.number_input(
@@ -9194,6 +9215,58 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     min_value=3, max_value=15, value=5, step=1,
                     key='unlisted_proj_years',
                     help="Number of years to project forward"
+                )
+        
+        # RIM PARAMETERS FOR UNLISTED MODE
+        # ================================
+        with st.expander("💎 RIM Parameters (Leave at 0 for Auto-Calculation)"):
+            st.info("💡 **Note:** These parameters apply to Residual Income Model. Leave at 0 for auto-calculation from actual data.")
+        
+            st.markdown("### 🏢 Residual Income Model (RIM) Parameters")
+            col_rim1, col_rim2, col_rim3, col_rim4 = st.columns(4)
+        
+            with col_rim1:
+                rim_required_return_unlisted = st.number_input(
+                    "Required Return (%)",
+                    min_value=5.0,
+                    max_value=30.0,
+                    value=12.0,
+                    step=0.5,
+                    key='unlisted_rim_required_return',
+                    help="Discount rate for RIM. Usually = Cost of Equity."
+                )
+        
+            with col_rim2:
+                rim_assumed_roe_unlisted = st.number_input(
+                    "Assumed ROE (%)",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=0.0,
+                    step=1.0,
+                    key='unlisted_rim_roe',
+                    help="0 = Auto-calculate from historical data. Return on Equity assumption."
+                )
+        
+            with col_rim3:
+                rim_terminal_growth_unlisted = st.number_input(
+                    "Terminal Growth (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=0.0,
+                    step=0.5,
+                    key='unlisted_rim_terminal_growth',
+                    help="0 = Use same as DCF terminal growth. Long-term perpetual growth rate."
+                )
+        
+            with col_rim4:
+                rim_projection_years_unlisted = st.number_input(
+                    "Projection Years",
+                    min_value=0,
+                    max_value=15,
+                    value=0,
+                    step=1,
+                    key='unlisted_rim_proj_years',
+                    help="0 = Use same as DCF projection years. Number of years to project."
                 )
     
         if excel_file and company_name and num_shares:
