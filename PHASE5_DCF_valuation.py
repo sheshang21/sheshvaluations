@@ -9444,20 +9444,104 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         st.metric("WACC", f"{wacc_details['wacc']:.2f}%")
                 
                     # Tabs for detailed output
-                    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-                        "📊 Historical Financials",
-                        "📈 Projections",
-                        "💰 FCF Working",
-                        "🎯 WACC Calculation",
-                        "🏆 Valuation Summary",
-                        "🔍 Comparative Valuation",
-                        "🏢 Peer Comparison",
-                        "⚙️ Assumptions & Parameters"
-                    ])
-                
-                    with tab1:
-                        st.subheader("Historical Financials (Last 3 Years)")
+                    # Build dynamic tab list based on enabled models
+                    tab_list = ["📊 Historical Financials"]
+                    if run_dcf_unlisted:
+                        tab_list.extend(["📋 Assumptions & Inputs", "📈 Projections", "💰 FCF Working", "🎯 WACC Calculation", "🏆 DCF Summary", "📉 Sensitivity Analysis"])
+                    if run_rim_unlisted:
+                        tab_list.append("📚 RIM Valuation")
+                    if run_comp_unlisted and peer_tickers:
+                        tab_list.append("📊 Comparative Valuation")
                     
+                    tabs = st.tabs(tab_list)
+                    tab_idx = 0
+                    
+                    # Tab: Historical Financials
+                    # ============================================
+                    # DISPLAY FAIR VALUES SUMMARY AT TOP
+                    # ============================================
+                    st.markdown("## 🎯 Valuation Summary")
+                    
+                    fair_values_dict = {}
+                    
+                    # DCF Value
+                    if run_dcf_unlisted:
+                        fair_values_dict['DCF (FCFF)'] = valuation['fair_value_per_share']
+                    
+                    # Calculate RIM if enabled
+                    if run_rim_unlisted:
+                        try:
+                            # Calculate RIM
+                            rim_required_return = rim_required_return_unlisted if rim_required_return_unlisted > 0 else wacc_details['wacc']
+                            rim_roe = rim_assumed_roe_unlisted if rim_assumed_roe_unlisted > 0 else None
+                            rim_term_growth = rim_terminal_growth_unlisted if rim_terminal_growth_unlisted > 0 else terminal_growth
+                            rim_proj_years = rim_projection_years_unlisted if rim_projection_years_unlisted > 0 else projection_years
+                            
+                            rim_results_unlisted = calculate_rim_valuation(
+                                financials,
+                                rim_required_return,
+                                rim_term_growth,
+                                rim_proj_years,
+                                num_shares,
+                                assumed_roe=rim_roe
+                            )
+                            
+                            if rim_results_unlisted and 'value_per_share' in rim_results_unlisted:
+                                fair_values_dict['RIM (Residual Income)'] = rim_results_unlisted.get('value_per_share', 0)
+                        except Exception as e:
+                            st.warning(f"RIM calculation encountered an error: {str(e)}")
+                    
+                    # Comparative valuations will be added later
+                    comp_avg = None
+                    comp_median = None
+                    
+                    # Display fair values in columns
+                    fv_cols = st.columns(len(fair_values_dict) + 2)  # +2 for comp avg/median
+                    
+                    col_idx = 0
+                    for method, value in fair_values_dict.items():
+                        with fv_cols[col_idx]:
+                            st.metric(method, f"₹{value:.2f}")
+                        col_idx += 1
+                    
+                    # Placeholders for comparative
+                    with fv_cols[col_idx]:
+                        st.metric("Comp (Avg)", "Calculating..." if run_comp_unlisted and peer_tickers else "N/A")
+                    with fv_cols[col_idx + 1]:
+                        st.metric("Comp (Median)", "Calculating..." if run_comp_unlisted and peer_tickers else "N/A")
+                    
+                    st.markdown("---")
+                    
+                    # ============================================
+                    # BUILD DYNAMIC TAB LIST
+                    # ============================================
+                    tab_list = ["📊 Historical Financials"]
+                    if run_dcf_unlisted:
+                        tab_list.extend(["📋 Assumptions & Inputs", "📈 Projections", "💰 FCF Working", "🎯 WACC Calculation", "🏆 DCF Summary", "📉 Sensitivity Analysis"])
+                    if run_rim_unlisted:
+                        tab_list.append("📚 RIM Valuation")
+                    if run_comp_unlisted and peer_tickers:
+                        tab_list.append("📊 Comparative Valuation")
+                    
+                    tabs = st.tabs(tab_list)
+                    tab_idx = 0
+                    
+                    # ============================================
+                    # TAB: HISTORICAL FINANCIALS
+                    # ============================================
+                    with tabs[tab_idx]:
+                        st.subheader("Historical Financials")
+                        
+                        # Add Historical Financials Chart
+                        try:
+                            # Unlisted data is already oldest-first, so reverse_years=False
+                            st.plotly_chart(create_historical_financials_chart(financials, reverse_years=False), use_container_width=True)
+                        except Exception as e:
+                            st.error(f"Historical chart error: {str(e)}")
+                        
+                        st.markdown("---")
+                        st.markdown("### Income Statement")
+                        
                         hist_df = pd.DataFrame({
                             'Year': [str(y) for y in financials['years']],
                             'Revenue': financials['revenue'],
@@ -9469,12 +9553,11 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             'Tax': financials['tax'],
                             'NOPAT': financials['nopat']
                         })
-                    
-                        # Format numeric columns only
                         numeric_cols = hist_df.select_dtypes(include=[np.number]).columns.tolist()
                         format_dict = {col: '{:.2f}' for col in numeric_cols}
                         st.dataframe(hist_df.style.format(format_dict), use_container_width=True)
-                    
+                        
+                        st.markdown("---")
                         st.subheader("Balance Sheet Metrics")
                         bs_df = pd.DataFrame({
                             'Year': [str(y) for y in financials['years']],
@@ -9490,400 +9573,374 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         format_dict = {col: '{:.2f}' for col in numeric_cols}
                         st.dataframe(bs_df.style.format(format_dict), use_container_width=True)
                     
-                        st.subheader("Working Capital Days")
-                        wc_df = pd.DataFrame({
-                            'Year': [str(y) for y in financials['years']],
-                            'Inventory Days': wc_metrics['inventory_days'],
-                            'Debtor Days': wc_metrics['debtor_days'],
-                            'Creditor Days': wc_metrics['creditor_days']
-                        })
-                        numeric_cols = wc_df.select_dtypes(include=[np.number]).columns.tolist()
-                        format_dict = {col: '{:.2f}' for col in numeric_cols}
-                        st.dataframe(wc_df.style.format(format_dict), use_container_width=True)
+                    tab_idx += 1
                     
-                        st.info(f"**Average Working Capital Days:** Inventory: {wc_metrics['avg_inv_days']:.1f} | Debtors: {wc_metrics['avg_deb_days']:.1f} | Creditors: {wc_metrics['avg_cred_days']:.1f}")
-                
-                    with tab2:
-                        st.subheader(f"Projected Financials ({projection_years} Years)")
-                    
-                        proj_df = pd.DataFrame({
-                            'Year': [str(y) for y in projections['year']],
-                            'Revenue': projections['revenue'],
-                            'EBITDA': projections['ebitda'],
-                            'Depreciation': projections['depreciation'],
-                            'EBIT': projections['ebit'],
-                            'NOPAT': projections['nopat'],
-                            'Capex': projections['capex'],
-                            'Δ WC': projections['delta_wc'],
-                            'FCFF': projections['fcff']
-                        })
-                        numeric_cols = proj_df.select_dtypes(include=[np.number]).columns.tolist()
-                        format_dict = {col: '{:.2f}' for col in numeric_cols}
-                        st.dataframe(proj_df.style.format(format_dict), use_container_width=True)
-                    
-                        st.info(f"**Key Drivers:** Revenue Growth: {drivers['avg_growth']:.2f}% | Opex Margin: {drivers['avg_opex_margin']:.2f}% | CapEx/Revenue: {drivers['avg_capex_ratio']:.2f}% | Depreciation Rate: {drivers['avg_dep_rate']:.2f}%")
-                
-                    with tab3:
-                        st.subheader("Free Cash Flow Working")
-                    
-                        fcff_df = pd.DataFrame({
-                            'Year': [str(y) for y in projections['year']],
-                            'NOPAT': projections['nopat'],
-                            '+ Depreciation': projections['depreciation'],
-                            '- Δ WC': projections['delta_wc'],
-                            '- Capex': projections['capex'],
-                            '= FCFF': projections['fcff'],
-                            'Discount Factor': [(1 + wacc_details['wacc']/100)**(-y) for y in projections['year']],
-                            'PV(FCFF)': valuation['pv_fcffs']
-                        })
-                        numeric_cols = fcff_df.select_dtypes(include=[np.number]).columns.tolist()
-                        format_dict = {col: '{:.4f}' for col in numeric_cols}
-                        st.dataframe(fcff_df.style.format(format_dict), use_container_width=True)
-                    
-                        st.metric("Sum of PV(FCFF)", f"₹ {valuation['sum_pv_fcff']:.2f} Lacs")
-                
-                    with tab4:
-                        st.subheader("WACC Calculation")
-                    
-                        col1, col2 = st.columns(2)
-                    
-                        with col1:
-                            st.markdown("**Cost of Equity (Ke)**")
-                            st.write(f"Risk-free Rate (Rf): **{wacc_details['rf']:.2f}%**")
-                            st.write(f"Market Return (Rm): **{wacc_details['rm']:.2f}%**")
-                            st.write(f"Beta (β): **{wacc_details['beta']:.2f}**")
-                            st.write(f"Ke = Rf + β × (Rm - Rf)")
-                            st.write(f"Ke = {wacc_details['rf']:.2f}% + {wacc_details['beta']:.2f} × ({wacc_details['rm']:.2f}% - {wacc_details['rf']:.2f}%)")
-                            st.write(f"**Ke = {wacc_details['ke']:.2f}%**")
-                    
-                        with col2:
-                            st.markdown("**Cost of Debt (Kd)**")
-                            st.write(f"Interest Expense: **₹ {financials['interest'][0]:.2f} Lacs**")
-                            st.write(f"Total Debt: **₹ {wacc_details['debt']:.2f} Lacs**")
-                            st.write(f"Kd (pre-tax) = {wacc_details['kd']:.2f}%")
-                            st.write(f"Tax Rate = {tax_rate}%")
-                            st.write(f"**Kd (after-tax) = {wacc_details['kd_after_tax']:.2f}%**")
-                    
-                        st.markdown("---")
-                        st.markdown("**WACC Calculation**")
-                    
-                        col3, col4 = st.columns(2)
-                        with col3:
-                            st.write(f"Equity (E): **₹ {wacc_details['equity']:.2f} Lacs** ({wacc_details['we']:.2f}%)")
-                            st.write(f"Debt (D): **₹ {wacc_details['debt']:.2f} Lacs** ({wacc_details['wd']:.2f}%)")
-                            st.write(f"Total Capital (V): **₹ {wacc_details['equity'] + wacc_details['debt']:.2f} Lacs**")
-                    
-                        with col4:
-                            st.write(f"WACC = (E/V × Ke) + (D/V × Kd × (1-Tax))")
-                            st.write(f"WACC = ({wacc_details['we']:.2f}% × {wacc_details['ke']:.2f}%) + ({wacc_details['wd']:.2f}% × {wacc_details['kd_after_tax']:.2f}%)")
-                            st.write(f"**WACC = {wacc_details['wacc']:.2f}%**")
-                
-                    with tab5:
-                        st.subheader("DCF Valuation Summary")
-                    
-                        # Show FCFF adjustment notice if applicable
-                        if valuation.get('fcff_adjusted', False):
-                            st.warning("⚠️ **FCFF Adjustment Applied**")
-                            adj_details = valuation.get('adjustment_details', {})
-                            st.write(f"**Strategy Used:** {adj_details.get('strategy', 'N/A')}")
-                            st.write(f"**Original Terminal FCFF:** ₹{projections['fcff'][-1]:.2f} Lacs")
-                            st.write(f"**Adjusted Terminal FCFF:** ₹{valuation['adjusted_terminal_fcff']:.2f} Lacs")
-                            st.caption("📌 Adjustment details shown during valuation run above")
-                            st.markdown("---")
-                    
-                        st.markdown("### Terminal Value Calculation")
-                    
-                        # Use adjusted FCFF if available
-                        terminal_fcff = valuation.get('adjusted_terminal_fcff', projections['fcff'][-1])
-                    
-                        st.write(f"FCFF (Year {projection_years}): **₹ {terminal_fcff:.2f} Lacs**")
-                        if valuation.get('fcff_adjusted', False):
-                            st.caption(f"(Original: ₹{projections['fcff'][-1]:.2f} Lacs - Adjusted for sustainability)")
-                    
-                        st.write(f"Terminal Growth Rate (g): **{terminal_growth}%**")
-                        st.write(f"FCFF (Year {projection_years + 1}) = FCFF{projection_years} × (1 + g)")
-                        st.write(f"FCFF (Year {projection_years + 1}) = ₹ {terminal_fcff:.2f} × (1 + {terminal_growth/100})")
-                        st.write(f"FCFF (Year {projection_years + 1}) = **₹ {terminal_fcff * (1 + terminal_growth/100):.2f} Lacs**")
-                    
-                        st.write(f"\nTerminal Value = FCFF{projection_years + 1} / (WACC - g)")
-                        st.write(f"Terminal Value = ₹ {projections['fcff'][-1] * (1 + terminal_growth/100):.2f} / ({wacc_details['wacc']:.2f}% - {terminal_growth}%)")
-                        st.write(f"**Terminal Value = ₹ {valuation['terminal_value']:.2f} Lacs**")
-                    
-                        st.write(f"\nPV(Terminal Value) = TV / (1 + WACC)^{projection_years}")
-                        st.write(f"**PV(Terminal Value) = ₹ {valuation['pv_terminal_value']:.2f} Lacs**")
-                    
-                        st.markdown("---")
-                        st.markdown("### Enterprise Value")
-
-                        # Show growth phase adjustment if applied
-                        if valuation.get('growth_phase_adjusted', False):
-                            st.info("📊 **Growth-Phase Company:** Sum of PV(FCFF) was adjusted from negative to zero")
-                            st.caption(f"Original: ₹{valuation['original_sum_pv_fcff']:.2f} Lacs → Adjusted: ₹{valuation['sum_pv_fcff']:.2f} Lacs")
-                    
-                        ev_df = pd.DataFrame({
-                            'Component': ['Sum of PV(FCFF)', 'PV(Terminal Value)', 'Enterprise Value'],
-                            'Value (₹ Lacs)': [
-                                valuation['sum_pv_fcff'],
-                                valuation['pv_terminal_value'],
-                                valuation['enterprise_value']
-                            ]
-                        })
-                        st.dataframe(ev_df.style.format({'Value (₹ Lacs)': '{:.2f}'}), use_container_width=True)
-                    
-                        tv_pct = valuation['tv_percentage']
-                        if tv_pct > 90:
-                            st.warning(f"⚠️ Terminal Value represents {tv_pct:.1f}% of Enterprise Value (>90% is high)")
-                        else:
-                            st.info(f"Terminal Value represents {tv_pct:.1f}% of Enterprise Value")
-                    
-                        st.markdown("---")
-                        st.markdown("### Equity Value & Fair Value per Share")
-                    
-                        equity_calc_df = pd.DataFrame({
-                            'Item': ['Enterprise Value', 'Less: Total Debt', 'Add: Cash & Equivalents', '= Net Debt', 'Equity Value', 'Equity Value (₹)', 'Number of Shares', 'Fair Value per Share'],
-                            'Value': [
-                                f"₹ {valuation['enterprise_value']:.2f} Lacs",
-                                f"₹ {valuation['total_debt']:.2f} Lacs",
-                                f"₹ {valuation['cash']:.2f} Lacs",
-                                f"₹ {valuation['net_debt']:.2f} Lacs",
-                                f"₹ {valuation['equity_value']:.2f} Lacs",
-                                f"₹ {valuation['equity_value_rupees']:,.0f}",
-                                f"{shares:,}" if 'shares' in locals() else f"{num_shares:,}",
-                                f"₹ {valuation['fair_value_per_share']:.2f}"
-                            ]
-                        })
-                        st.table(equity_calc_df)
-                    
-                        st.success(f"### 🎯 Fair Value per Share: ₹ {valuation['fair_value_per_share']:.2f}")
-                    
-                        # Sensitivity Analysis
-                        st.markdown("---")
-                        st.subheader("📊 Sensitivity Analysis")
-                    
-                        wacc_range = np.arange(max(1.0, wacc_details['wacc'] - 3), wacc_details['wacc'] + 3.5, 0.5)
-                        g_range = np.arange(max(1.0, terminal_growth - 2), min(terminal_growth + 3, wacc_details['wacc'] - 1), 0.5)
-                    
-                        if len(g_range) == 0:
-                            g_range = np.array([terminal_growth])
-                    
-                        sensitivity_data = []
-                    
-                        for w in wacc_range:
-                            row_data = {'WACC →': f"{w:.1f}%"}
-                            for g_val in g_range:
-                                if g_val >= w - 0.1:  # Need at least 0.1% gap
-                                    row_data[f"g={g_val:.1f}%"] = "N/A"
-                                else:
-                                    try:
-                                        fcff_n_plus_1 = projections['fcff'][-1] * (1 + g_val / 100)
-                                        tv = fcff_n_plus_1 / ((w / 100) - (g_val / 100))
-                                        pv_tv = tv / ((1 + w / 100) ** projection_years)
-                                        ev = valuation['sum_pv_fcff'] + pv_tv
-                                        eq_val = ev - valuation['net_debt']
-                                        eq_val_rupees = eq_val * 100000
-                                        fv = eq_val_rupees / num_shares if num_shares > 0 else 0
-                                        row_data[f"g={g_val:.1f}%"] = f"₹{fv:.2f}"
-                                    except:
-                                        row_data[f"g={g_val:.1f}%"] = "Error"
-                            sensitivity_data.append(row_data)
-                    
-                        sensitivity_df = pd.DataFrame(sensitivity_data)
-                        st.dataframe(sensitivity_df, use_container_width=True)
-                    
-                        st.caption("Sensitivity table shows Fair Value per Share for different WACC and terminal growth rate combinations")
-                
-                    with tab6:
-                        st.subheader("🔍 Comparative (Relative) Valuation")
-                    
-                        if peer_tickers and peer_tickers.strip():
-                            with st.spinner("Fetching comparable companies data..."):
-                                # Note: Unlisted companies don't have session state checkboxes
-                                # For now, use Yahoo Finance (default behavior)
-                                comp_results = perform_comparative_valuation(
-                                    None, 
-                                    peer_tickers, 
-                                    financials, 
-                                    num_shares, 
-                                    "NS",
-                                    use_screener_peers=False
-                                )
-                        
-                            if comp_results:
-                                # Show comparables table
-                                st.markdown("### Comparable Companies")
-                                comp_df = pd.DataFrame(comp_results['comparables'])
-                                if not comp_df.empty:
-                                    display_comp_df = comp_df[['ticker', 'name', 'price', 'pe', 'pb', 'ps', 'ev_ebitda', 'ev_sales']]
-                                    st.dataframe(display_comp_df.style.format({
-                                        'price': '₹{:.2f}',
-                                        'pe': '{:.2f}x',
-                                        'pb': '{:.2f}x',
-                                        'ps': '{:.2f}x',
-                                        'ev_ebitda': '{:.2f}x',
-                                        'ev_sales': '{:.2f}x'
-                                    }), use_container_width=True)
+                    # ============================================
+                    # DCF TABS (only if DCF enabled)
+                    # ============================================
+                    if run_dcf_unlisted:
+                        # TAB: Assumptions & Inputs
+                        with tabs[tab_idx]:
+                            st.subheader("📋 Assumptions & Projection Inputs")
                             
-                                # Show multiples statistics
-                                st.markdown("### Peer Multiples Statistics")
-                                for multiple, stats in comp_results['multiples_stats'].items():
-                                    with st.expander(f"📊 {multiple.upper()} - Avg: {stats['average']:.2f}x, Median: {stats['median']:.2f}x"):
-                                        st.write(f"**Range:** {stats['min']:.2f}x - {stats['max']:.2f}x")
-                                        st.write(f"**Std Dev:** {stats['std']:.2f}x")
-                                        st.write(f"**Peer Values:** {', '.join([f'{v:.2f}x' for v in stats['values']])}")
-                            
-                                # Show implied valuations
-                                st.markdown("### Implied Fair Values")
-                            
-                                all_avg_values = []
-                                all_median_values = []
-                            
-                                for method_key, val_data in comp_results['valuations'].items():
-                                    st.markdown(f"#### {val_data['method']}")
-                                
-                                    col1, col2 = st.columns(2)
-                                
-                                    with col1:
-                                        st.markdown("**Using Average Multiple:**")
-                                        st.write(val_data['formula_avg'])
-                                        st.metric("Fair Value (Avg)", f"₹{val_data['fair_value_avg']:.2f}")
-                                        all_avg_values.append(val_data['fair_value_avg'])
-                                
-                                    with col2:
-                                        st.markdown("**Using Median Multiple:**")
-                                        st.write(val_data['formula_median'])
-                                        st.metric("Fair Value (Median)", f"₹{val_data['fair_value_median']:.2f}")
-                                        all_median_values.append(val_data['fair_value_median'])
-                                
-                                    st.markdown("---")
-                            
-                                # Summary statistics
-                                if all_avg_values and all_median_values:
-                                    st.markdown("### 📈 Comparative Valuation Summary")
-                                
-                                    col1, col2, col3 = st.columns(3)
-                                
-                                    with col1:
-                                        st.metric("Average (All Methods)", f"₹{np.mean(all_avg_values):.2f}")
-                                        st.metric("Median (All Methods)", f"₹{np.median(all_median_values):.2f}")
-                                
-                                    with col2:
-                                        st.metric("Min Fair Value", f"₹{min(all_avg_values + all_median_values):.2f}")
-                                        st.metric("Max Fair Value", f"₹{max(all_avg_values + all_median_values):.2f}")
-                                
-                                    with col3:
-                                        if valuation['fair_value_per_share'] > 0:
-                                            st.metric("DCF Fair Value", f"₹{valuation['fair_value_per_share']:.2f}")
-                                            combined_avg = (np.mean(all_avg_values) + valuation['fair_value_per_share']) / 2
-                                            st.metric("DCF + Comp Avg", f"₹{combined_avg:.2f}")
-                            else:
-                                st.warning("Could not fetch comparable companies data")
-                        else:
-                            st.info("💡 Enter peer tickers above (e.g., 'RELIANCE, TATASTEEL') to see comparative valuation based on peer multiples")
-                
-                    with tab7:
-                        st.subheader("🏢 Advanced Peer Comparison Dashboard")
-                    
-                        if peer_tickers and peer_tickers.strip():
-                            try:
-                                from peer_comparison_charts import create_peer_comparison_dashboard
-                                import inspect
-                            
-                                # Check if the function supports unlisted_data parameter
-                                sig = inspect.signature(create_peer_comparison_dashboard)
-                                supports_unlisted = 'unlisted_data' in sig.parameters
-                            
-                                if supports_unlisted:
-                                    # Module supports unlisted - create full comparison
-                                    synthetic_ticker = company_name.replace(' ', '_').upper()[:10] if company_name else "UNLISTED"
-                                    create_peer_comparison_dashboard(synthetic_ticker, peer_tickers, unlisted_data=financials)
-                                else:
-                                    # Module doesn't support unlisted companies
-                                    st.warning("⚠️ **Advanced Peer Comparison Not Available for Unlisted Companies**")
-                                    st.info("""
-                                    The current peer comparison dashboard module only supports listed companies.
-                                
-                                    **However, you still have comprehensive peer analysis available:**
-                                    - **Tab 6 (Comparative Valuation)** provides detailed peer multiples and valuations
-                                    - Shows peer P/E, P/B, P/S, EV/EBITDA ratios
-                                    - Calculates implied fair values based on peer averages
-                                    - Includes peer statistics and comparisons
-                                
-                                    💡 **For full 3D visualizations:** The peer comparison module needs to be updated 
-                                    to support unlisted company data.
-                                    """)
-                                    
-                            except ImportError:
-                                st.warning("⚠️ **Peer Comparison Dashboard Module Not Installed**")
-                                st.info("""
-                                The `peer_comparison_charts.py` module is not available.
-                            
-                                **Don't worry!** You still have comprehensive peer analysis in **Tab 6 (Comparative Valuation)** which includes:
-                                - Detailed peer company metrics
-                                - Multiple valuation methods (P/E, P/B, P/S, EV/EBITDA)
-                                - Implied fair values based on peer averages
-                                - Full peer statistics and comparisons
-                                """)
-                            except Exception as e:
-                                st.error(f"⚠️ **Error Loading Peer Comparison Dashboard**")
-                                st.write(f"Error details: {str(e)}")
-                                st.info("💡 **Alternative:** Use **Tab 6 (Comparative Valuation)** for comprehensive peer analysis with multiples-based valuation")
-                        else:
-                            st.info("💡 Enter peer tickers above (e.g., 'RELIANCE, TATASTEEL') to see detailed peer comparison with 3D visualizations")
-                    
-                    with tab8:
-                        st.subheader("⚙️ Assumptions & Parameters")
-                        
-                        # Compact metrics
-                        years_display = [str(y).replace('_', '') for y in financials['years']]
-                        years_range = f"{years_display[-1]} - {years_display[0]}" if len(years_display) > 1 else years_display[0]
-                        
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("📅 Historical Period", f"{len(financials['years'])} years", delta=years_range, delta_color="off")
-                        with col2:
-                            st.metric("🔮 Projection Years", f"{projection_years} years")
-                        with col3:
-                            st.metric("🏢 Shares", f"{num_shares:,}")
-                        
-                        st.markdown("---")
-                        
-                        # WACC Bar Chart
-                        st.markdown("### 💰 WACC Components")
-                        fig_wacc = go.Figure()
-                        fig_wacc.add_trace(go.Bar(
-                            x=['WACC', 'Ke', 'Kd', 'Terminal g'],
-                            y=[wacc_details['wacc'], wacc_details['ke'], wacc_details['kd_after_tax'], terminal_growth],
-                            marker=dict(color=['#667eea', '#764ba2', '#f093fb', '#f5576c']),
-                            text=[f"{wacc_details['wacc']:.2f}%", f"{wacc_details['ke']:.2f}%", 
-                                  f"{wacc_details['kd_after_tax']:.2f}%", f"{terminal_growth:.2f}%"],
-                            textposition='auto'
-                        ))
-                        fig_wacc.update_layout(height=220, margin=dict(l=20, r=20, t=10, b=20), showlegend=False,
-                                              yaxis=dict(title='%'), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                        st.plotly_chart(fig_wacc, use_container_width=True)
-                        
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            st.caption(f"**Tax:** {tax_rate:.2f}% | **Beta:** {wacc_details['beta']:.3f} | **Rf:** {wacc_details['rf']:.2f}%")
-                        with col_b:
-                            st.caption(f"**Equity Wt:** {wacc_details['we']:.1f}% | **Debt Wt:** {wacc_details['wd']:.1f}%")
-                        
-                        st.markdown("---")
-                        
-                        # Compact Drivers
-                        st.markdown("### 📊 Projection Drivers")
-                        with st.expander("View Parameters", expanded=False):
+                            st.markdown("### 📊 Projection Drivers")
                             drivers_data = [
                                 ['Revenue Growth', f"{drivers.get('avg_growth', 0):.2f}%", 'Historical CAGR'],
                                 ['EBITDA Margin', f"{drivers.get('avg_ebitda_margin', 0):.2f}%", 'Historical Avg'],
                                 ['CapEx/Revenue', f"{drivers.get('avg_capex_ratio', 0):.2f}%", 'Historical Avg'],
+                                ['Depreciation Rate', f"{drivers.get('avg_depreciation_rate', 0):.2f}%", 'Historical Avg'],
+                                ['Tax Rate', f"{tax_rate:.2f}%", 'User Input'],
+                                ['Terminal Growth', f"{terminal_growth:.2f}%", 'User Input']
+                            ]
+                            st.dataframe(pd.DataFrame(drivers_data, columns=['Parameter', 'Value', 'Source']),
+                                       use_container_width=True, hide_index=True)
+                            
+                            st.markdown("---")
+                            st.markdown("### 💰 Working Capital Metrics")
+                            wc_data = [
                                 ['Inventory Days', f"{wc_metrics.get('avg_inv_days', 0):.0f}", 'Historical'],
                                 ['Debtor Days', f"{wc_metrics.get('avg_deb_days', 0):.0f}", 'Historical'],
                                 ['Creditor Days', f"{wc_metrics.get('avg_cred_days', 0):.0f}", 'Historical']
                             ]
-                            st.dataframe(pd.DataFrame(drivers_data, columns=['Parameter', 'Value', 'Source']),
-                                       use_container_width=True, hide_index=True, height=200)
-
+                            st.dataframe(pd.DataFrame(wc_data, columns=['Metric', 'Value', 'Source']),
+                                       use_container_width=True, hide_index=True)
+                        
+                        tab_idx += 1
+                        
+                        # TAB: Projections
+                        with tabs[tab_idx]:
+                            st.subheader("📈 Financial Projections")
+                            
+                            # Add Projections Chart
+                            try:
+                                st.plotly_chart(create_projections_chart(projections), use_container_width=True)
+                            except Exception as e:
+                                st.error(f"Projections chart error: {str(e)}")
+                            
+                            st.markdown("---")
+                            
+                            proj_df = pd.DataFrame({
+                                'Year': [f"Year {y}" for y in projections['year']],
+                                'Revenue': projections['revenue'],
+                                'EBITDA': projections['ebitda'],
+                                'NOPAT': projections['nopat'],
+                                'CapEx': projections['capex'],
+                                'Δ WC': projections['change_wc'],
+                                'FCFF': projections['fcff']
+                            })
+                            numeric_cols = proj_df.select_dtypes(include=[np.number]).columns.tolist()
+                            format_dict = {col: '{:.2f}' for col in numeric_cols}
+                            st.dataframe(proj_df.style.format(format_dict), use_container_width=True)
+                        
+                        tab_idx += 1
+                        
+                        # TAB: FCF Working
+                        with tabs[tab_idx]:
+                            st.subheader("💰 Free Cash Flow Calculation")
+                            
+                            fcf_df = pd.DataFrame({
+                                'Year': [f"Year {y}" for y in projections['year']],
+                                'NOPAT': projections['nopat'],
+                                '- CapEx': [-c for c in projections['capex']],
+                                '- Δ WC': [-wc for wc in projections['change_wc']],
+                                '= FCFF': projections['fcff']
+                            })
+                            numeric_cols = fcf_df.select_dtypes(include=[np.number]).columns.tolist()
+                            format_dict = {col: '{:.2f}' for col in numeric_cols}
+                            st.dataframe(fcf_df.style.format(format_dict).background_gradient(cmap='RdYlGn', subset=['= FCFF']), 
+                                       use_container_width=True)
+                            
+                            st.markdown("---")
+                            st.subheader("Terminal Value Calculation")
+                            
+                            fcff_final = projections['fcff'][-1]
+                            fcff_n_plus_1 = fcff_final * (1 + terminal_growth / 100)
+                            
+                            tv_calc = pd.DataFrame({
+                                'Component': ['Final Year FCFF', 'Growth Rate', 'FCFF (Year N+1)', 'WACC', 'Terminal Growth', 'Terminal Value'],
+                                'Value': [
+                                    f"₹{fcff_final:.2f}L",
+                                    f"{terminal_growth:.2f}%",
+                                    f"₹{fcff_n_plus_1:.2f}L",
+                                    f"{wacc_details['wacc']:.2f}%",
+                                    f"{terminal_growth:.2f}%",
+                                    f"₹{valuation['terminal_value']:.2f}L"
+                                ]
+                            })
+                            st.dataframe(tv_calc, use_container_width=True, hide_index=True)
+                        
+                        tab_idx += 1
+                        
+                        # TAB: WACC Calculation
+                        with tabs[tab_idx]:
+                            st.subheader("🎯 WACC Calculation")
+                            
+                            # WACC Pie Chart
+                            try:
+                                import plotly.graph_objects as go
+                                
+                                # Calculate weights
+                                total_capital = wacc_details['market_value_equity'] + wacc_details['market_value_debt']
+                                equity_weight = (wacc_details['market_value_equity'] / total_capital * 100) if total_capital > 0 else 0
+                                debt_weight = (wacc_details['market_value_debt'] / total_capital * 100) if total_capital > 0 else 0
+                                
+                                fig = go.Figure(data=[go.Pie(
+                                    labels=['Equity', 'Debt'],
+                                    values=[equity_weight, debt_weight],
+                                    hole=0.3,
+                                    marker_colors=['#1f77b4', '#ff7f0e']
+                                )])
+                                fig.update_layout(title="Capital Structure", height=400)
+                                st.plotly_chart(fig, use_container_width=True)
+                            except Exception as e:
+                                st.error(f"WACC chart error: {str(e)}")
+                            
+                            st.markdown("---")
+                            
+                            wacc_df = pd.DataFrame({
+                                'Component': ['Cost of Equity (Ke)', 'Cost of Debt (Kd)', 'Tax Rate', 'After-Tax Kd', 
+                                            'Equity Weight', 'Debt Weight', 'WACC'],
+                                'Value': [
+                                    f"{wacc_details['cost_of_equity']:.2f}%",
+                                    f"{wacc_details['cost_of_debt']:.2f}%",
+                                    f"{tax_rate:.2f}%",
+                                    f"{wacc_details['after_tax_cost_of_debt']:.2f}%",
+                                    f"{wacc_details['weight_equity']*100:.2f}%",
+                                    f"{wacc_details['weight_debt']*100:.2f}%",
+                                    f"{wacc_details['wacc']:.2f}%"
+                                ]
+                            })
+                            st.dataframe(wacc_df, use_container_width=True, hide_index=True)
+                            
+                            st.markdown("---")
+                            st.markdown("### Cost of Equity (CAPM)")
+                            st.latex(r"K_e = R_f + \beta \times (R_m - R_f)")
+                            
+                            capm_df = pd.DataFrame({
+                                'Parameter': ['Risk-Free Rate (Rf)', 'Beta (β)', 'Market Return (Rm)', 'Market Risk Premium', 'Cost of Equity (Ke)'],
+                                'Value': [
+                                    f"{manual_rf_rate:.2f}%",
+                                    f"{wacc_details['beta']:.2f}",
+                                    f"{manual_rm_rate:.2f}%",
+                                    f"{manual_rm_rate - manual_rf_rate:.2f}%",
+                                    f"{wacc_details['cost_of_equity']:.2f}%"
+                                ]
+                            })
+                            st.dataframe(capm_df, use_container_width=True, hide_index=True)
+                        
+                        tab_idx += 1
+                        
+                        # TAB: DCF Summary
+                        with tabs[tab_idx]:
+                            st.subheader("🏆 DCF Valuation Summary")
+                            
+                            # Waterfall Chart
+                            try:
+                                fig = go.Figure(go.Waterfall(
+                                    name="DCF Waterfall",
+                                    orientation="v",
+                                    measure=["relative", "relative", "total"],
+                                    x=["PV of Projected FCFF", "PV of Terminal Value", "Enterprise Value"],
+                                    textposition="outside",
+                                    text=[f"₹{valuation['sum_pv_fcff']:.2f}L", 
+                                          f"₹{valuation['pv_terminal_value']:.2f}L",
+                                          f"₹{valuation['enterprise_value']:.2f}L"],
+                                    y=[valuation['sum_pv_fcff'], valuation['pv_terminal_value'], 0],
+                                    connector={"line":{"color":"rgb(63, 63, 63)"}},
+                                ))
+                                fig.update_layout(title="DCF Valuation Waterfall", showlegend=False, height=500, yaxis_title="Value (₹ Lacs)")
+                                st.plotly_chart(fig, use_container_width=True)
+                            except Exception as e:
+                                st.error(f"Waterfall chart error: {str(e)}")
+                            
+                            st.markdown("---")
+                            
+                            st.markdown("### Enterprise to Equity Value Bridge")
+                            equity_calc_df = pd.DataFrame({
+                                'Item': ['Enterprise Value', 'Less: Total Debt', 'Add: Cash & Equivalents', '= Net Debt', 
+                                        'Equity Value', 'Equity Value (₹)', 'Number of Shares', 'Fair Value per Share'],
+                                'Value (₹ Lacs)': [
+                                    f"{valuation['enterprise_value']:.2f}",
+                                    f"({valuation['total_debt']:.2f})",
+                                    f"{cash_balance:.2f}",
+                                    f"({valuation['net_debt']:.2f})",
+                                    f"{valuation['equity_value']:.2f}",
+                                    f"{valuation['equity_value_rupees']:,.0f}",
+                                    f"{num_shares:,}",
+                                    f"₹ {valuation['fair_value_per_share']:.2f}"
+                                ]
+                            })
+                            st.table(equity_calc_df)
+                            
+                            st.success(f"### 🎯 Fair Value per Share (DCF): ₹{valuation['fair_value_per_share']:.2f}")
+                        
+                        tab_idx += 1
+                        
+                        # TAB: Sensitivity Analysis
+                        with tabs[tab_idx]:
+                            st.subheader("📉 Sensitivity Analysis")
+                            
+                            wacc_range = np.arange(max(1.0, wacc_details['wacc'] - 3), wacc_details['wacc'] + 3.5, 0.5)
+                            g_range = np.arange(max(1.0, terminal_growth - 2), min(terminal_growth + 3, wacc_details['wacc'] - 1), 0.5)
+                            
+                            if len(g_range) == 0:
+                                g_range = np.array([terminal_growth])
+                            
+                            sensitivity_data = []
+                            
+                            for w in wacc_range:
+                                row_data = {'WACC →': f"{w:.1f}%"}
+                                for g_val in g_range:
+                                    if g_val >= w - 0.1:
+                                        row_data[f"g={g_val:.1f}%"] = "N/A"
+                                    else:
+                                        try:
+                                            fcff_n_plus_1 = projections['fcff'][-1] * (1 + g_val / 100)
+                                            tv = fcff_n_plus_1 / ((w / 100) - (g_val / 100))
+                                            pv_tv = tv / ((1 + w / 100) ** projection_years)
+                                            ev = valuation['sum_pv_fcff'] + pv_tv
+                                            eq_val = ev - valuation['net_debt']
+                                            eq_val_rupees = eq_val * 100000
+                                            fv = eq_val_rupees / num_shares if num_shares > 0 else 0
+                                            row_data[f"g={g_val:.1f}%"] = f"₹{fv:.2f}"
+                                        except:
+                                            row_data[f"g={g_val:.1f}%"] = "Error"
+                                sensitivity_data.append(row_data)
+                            
+                            sensitivity_df = pd.DataFrame(sensitivity_data)
+                            st.dataframe(sensitivity_df, use_container_width=True)
+                            
+                            st.caption("Sensitivity table shows Fair Value per Share for different WACC and terminal growth rate combinations")
+                        
+                        tab_idx += 1
+                    
+                    # ============================================
+                    # TAB: RIM VALUATION (if enabled)
+                    # ============================================
+                    if run_rim_unlisted:
+                        with tabs[tab_idx]:
+                            st.subheader("📚 Residual Income Model (RIM) Valuation")
+                            
+                            if 'rim_results_unlisted' in locals() and rim_results_unlisted:
+                                st.markdown("### 📖 Residual Income Formula")
+                                st.latex(r"Value = Book\;Value + \sum_{t=1}^{n} \frac{RI_t}{(1+r)^t} + \frac{RI_{n+1}}{(r-g)(1+r)^n}")
+                                st.latex(r"RI_t = NI_t - (r \times BV_{t-1})")
+                                
+                                st.markdown("---")
+                                st.markdown("### 📊 RIM Parameters Used")
+                                
+                                rim_params_df = pd.DataFrame({
+                                    'Parameter': ['Required Return (r)', 'Terminal Growth (g)', 'Projection Years', 
+                                                'Initial Book Value', 'Average ROE'],
+                                    'Value': [
+                                        f"{rim_results_unlisted.get('required_return', 0):.2f}%",
+                                        f"{rim_results_unlisted.get('terminal_growth', 0):.2f}%",
+                                        f"{rim_results_unlisted.get('projection_years', 0)}",
+                                        f"₹{rim_results_unlisted.get('initial_book_value', 0):.2f}L",
+                                        f"{rim_results_unlisted.get('avg_roe', 0):.2f}%"
+                                    ]
+                                })
+                                st.dataframe(rim_params_df, use_container_width=True, hide_index=True)
+                                
+                                st.markdown("---")
+                                st.markdown("### 📈 Projected Residual Income")
+                                
+                                if 'projections' in rim_results_unlisted:
+                                    rim_proj_df = pd.DataFrame({
+                                        'Year': [f"Year {i+1}" for i in range(len(rim_results_unlisted['projections']['net_income']))],
+                                        'Net Income': rim_results_unlisted['projections']['net_income'],
+                                        'Book Value': rim_results_unlisted['projections']['book_value'],
+                                        'Equity Charge': rim_results_unlisted['projections']['equity_charge'],
+                                        'Residual Income': rim_results_unlisted['projections']['residual_income'],
+                                        'PV of RI': rim_results_unlisted['projections']['pv_residual_income']
+                                    })
+                                    numeric_cols = rim_proj_df.select_dtypes(include=[np.number]).columns.tolist()
+                                    format_dict = {col: '{:.2f}' for col in numeric_cols}
+                                    st.dataframe(rim_proj_df.style.format(format_dict), use_container_width=True)
+                                
+                                st.markdown("---")
+                                st.markdown("### 🎯 RIM Valuation Summary")
+                                
+                                rim_summary_df = pd.DataFrame({
+                                    'Component': ['Initial Book Value', 'PV of Projected RI', 'PV of Terminal RI', 
+                                                'Total Equity Value', 'Number of Shares', 'Fair Value per Share'],
+                                    'Value': [
+                                        f"₹{rim_results_unlisted.get('initial_book_value', 0):.2f}L",
+                                        f"₹{rim_results_unlisted.get('pv_residual_income', 0):.2f}L",
+                                        f"₹{rim_results_unlisted.get('pv_terminal_value', 0):.2f}L",
+                                        f"₹{rim_results_unlisted.get('equity_value', 0):.2f}L",
+                                        f"{num_shares:,}",
+                                        f"₹{rim_results_unlisted.get('value_per_share', 0):.2f}"
+                                    ]
+                                })
+                                st.dataframe(rim_summary_df, use_container_width=True, hide_index=True)
+                                
+                                st.success(f"### 🎯 Fair Value per Share (RIM): ₹{rim_results_unlisted.get('value_per_share', 0):.2f}")
+                            else:
+                                st.warning("RIM valuation could not be calculated. Please check input parameters.")
+                        
+                        tab_idx += 1
+                    
+                    # ============================================
+                    # TAB: COMPARATIVE VALUATION (if enabled)
+                    # ============================================
+                    if run_comp_unlisted and peer_tickers:
+                        with tabs[tab_idx]:
+                            st.subheader("📊 Comparative (Relative) Valuation")
+                            
+                            if peer_tickers and peer_tickers.strip():
+                                with st.spinner("Fetching comparable companies data..."):
+                                    try:
+                                        comp_results = perform_comparative_valuation(
+                                            financials,
+                                            peer_tickers,
+                                            num_shares
+                                        )
+                                        
+                                        if comp_results and 'peer_data' in comp_results:
+                                            st.markdown("### 📊 Peer Company Multiples")
+                                            
+                                            peer_df = pd.DataFrame(comp_results['peer_data'])
+                                            if not peer_df.empty:
+                                                st.dataframe(peer_df, use_container_width=True)
+                                                
+                                                st.markdown("---")
+                                                st.markdown("### 🎯 Valuation Summary")
+                                                
+                                                # Update fair values with comp data
+                                                if 'pe_valuation' in comp_results and 'avg' in comp_results['pe_valuation']:
+                                                    comp_avg = comp_results['pe_valuation']['avg']
+                                                if 'pe_valuation' in comp_results and 'median' in comp_results['pe_valuation']:
+                                                    comp_median = comp_results['pe_valuation']['median']
+                                                
+                                                val_summary = pd.DataFrame({
+                                                    'Multiple': ['P/E Ratio', 'P/B Ratio', 'EV/EBITDA'],
+                                                    'Average': [
+                                                        f"₹{comp_results.get('pe_valuation', {}).get('avg', 0):.2f}" if 'pe_valuation' in comp_results else 'N/A',
+                                                        f"₹{comp_results.get('pb_valuation', {}).get('avg', 0):.2f}" if 'pb_valuation' in comp_results else 'N/A',
+                                                        f"₹{comp_results.get('ev_ebitda_valuation', {}).get('avg', 0):.2f}" if 'ev_ebitda_valuation' in comp_results else 'N/A'
+                                                    ],
+                                                    'Median': [
+                                                        f"₹{comp_results.get('pe_valuation', {}).get('median', 0):.2f}" if 'pe_valuation' in comp_results else 'N/A',
+                                                        f"₹{comp_results.get('pb_valuation', {}).get('median', 0):.2f}" if 'pb_valuation' in comp_results else 'N/A',
+                                                        f"₹{comp_results.get('ev_ebitda_valuation', {}).get('median', 0):.2f}" if 'ev_ebitda_valuation' in comp_results else 'N/A'
+                                                    ]
+                                                })
+                                                st.dataframe(val_summary, use_container_width=True, hide_index=True)
+                                                
+                                                # Update top metrics
+                                                if comp_avg:
+                                                    fv_cols[len(fair_values_dict)].metric("Comp (Avg)", f"₹{comp_avg:.2f}")
+                                                if comp_median:
+                                                    fv_cols[len(fair_values_dict) + 1].metric("Comp (Median)", f"₹{comp_median:.2f}")
+                                        else:
+                                            st.warning("Could not fetch peer company data")
+                                    except Exception as e:
+                                        st.error(f"Comparative valuation error: {str(e)}")
+                            else:
+                                st.info("No peer tickers provided. Enter peer tickers to enable comparative valuation.")
+                        
+                        tab_idx += 1
 
 
 
