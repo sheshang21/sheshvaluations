@@ -2929,16 +2929,33 @@ def get_risk_free_rate(custom_ticker=None):
         
         debug.append(f"📊 **DEBUG**: Downloaded {len(gsec_data)} rows of data")
         
+        # Show first few rows for debugging
+        if len(gsec_data) > 0:
+            debug.append(f"📋 **DEBUG**: Date range in data: {gsec_data.index[0]} to {gsec_data.index[-1]}")
+            debug.append(f"📋 **DEBUG**: First row values: {gsec_data.iloc[0].to_dict()}")
+            if len(gsec_data) > 1:
+                debug.append(f"📋 **DEBUG**: Last row values: {gsec_data.iloc[-1].to_dict()}")
+        
         if gsec_data.empty:
             debug.append(f"❌ **DEBUG**: No data returned for ticker {ticker}")
             debug.append("⚠️ This ticker may not exist or may not have historical data")
+            debug.append("💡 **TRY THESE WORKING TICKERS:**")
+            debug.append("   - ^TNX (US 10-Year Treasury Yield - most reliable)")
+            debug.append("   - ^IRX (US 13-Week T-Bill)")
+            debug.append("   - ^FVX (US 5-Year Treasury)")
+            debug.append("   - RELIANCE.NS (if you want to use stock price as rate)")
             fallback = 6.83
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
         
         if len(gsec_data) < 2:
             debug.append(f"⚠️ **DEBUG**: Only {len(gsec_data)} rows returned (need at least 2)")
-            debug.append(f"💡 **HINT**: Try a different ticker or check if this ticker has historical data on Yahoo Finance")
+            debug.append(f"💡 **TICKER '{ticker}' HAS INSUFFICIENT DATA**")
+            debug.append("💡 **TRY THESE WORKING TICKERS INSTEAD:**")
+            debug.append("   - ^TNX (US 10-Year Treasury Yield - most reliable)")
+            debug.append("   - ^IRX (US 13-Week T-Bill)")
+            debug.append("   - ^FVX (US 5-Year Treasury)")
+            debug.append("   - Or manually enter your desired rate in the field below")
             fallback = 6.83
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
