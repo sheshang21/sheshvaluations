@@ -2903,125 +2903,134 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
 
 def get_risk_free_rate(custom_ticker=None):
     """
-    Get risk-free rate from India 10-year Government Bond yields using Yahoo Finance.
-    Uses NIFTYGS10YR.NS (Nifty 10Y G-Sec Index) by default.
+    Get risk-free rate by calculating historical CAGR from Yahoo Finance ticker data.
+    
+    For bond indices/yields: Uses the closing value directly if it's already a percentage
+    For stocks/indices: Calculates CAGR from price history
     
     Returns:
         tuple: (rate, debug_messages_list)
     """
     from datetime import datetime, timedelta
     import yfinance as yf
+    import pandas as pd
     
-    ticker = custom_ticker if custom_ticker else 'NIFTYGS10YR.NS'
+    ticker = custom_ticker if custom_ticker else '^TNX'
     debug = []
     
     debug.append(f"🔍 **DEBUG**: Starting RF rate fetch for ticker: `{ticker}`")
     
     try:
-        # Fetch historical data from Yahoo Finance
+        # Fetch maximum available historical data
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=365*10)  # 10 years max
+        start_date = end_date - timedelta(days=365*20)  # Try to get 20 years
         
-        debug.append(f"📅 **DEBUG**: Fetching data from {start_date.date()} to {end_date.date()}")
+        debug.append(f"📅 **DEBUG**: Requesting data from {start_date.date()} to {end_date.date()}")
         
-        # Use yf.download directly (same as get_market_return)
-        gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        # Use yf.Ticker instead of yf.download for better control
+        ticker_obj = yf.Ticker(ticker)
+        gsec_data = ticker_obj.history(start=start_date, end=end_date)
         
         debug.append(f"📊 **DEBUG**: Downloaded {len(gsec_data)} rows of data")
         
-        # Show first few rows for debugging
+        # Show actual date range and data
         if len(gsec_data) > 0:
-            debug.append(f"📋 **DEBUG**: Date range in data: {gsec_data.index[0]} to {gsec_data.index[-1]}")
-            debug.append(f"📋 **DEBUG**: First row values: {gsec_data.iloc[0].to_dict()}")
-            if len(gsec_data) > 1:
-                debug.append(f"📋 **DEBUG**: Last row values: {gsec_data.iloc[-1].to_dict()}")
+            debug.append(f"📋 **DEBUG**: Date range: {gsec_data.index[0].date()} to {gsec_data.index[-1].date()}")
+            debug.append(f"📋 **DEBUG**: Columns available: {list(gsec_data.columns)}")
+            debug.append(f"📋 **DEBUG**: First close: {gsec_data['Close'].iloc[0]:.2f}")
+            debug.append(f"📋 **DEBUG**: Last close: {gsec_data['Close'].iloc[-1]:.2f}")
         
         if gsec_data.empty:
             debug.append(f"❌ **DEBUG**: No data returned for ticker {ticker}")
             debug.append("⚠️ This ticker may not exist or may not have historical data")
             debug.append("💡 **TRY THESE WORKING TICKERS:**")
-            debug.append("   - ^TNX (US 10-Year Treasury Yield - most reliable)")
+            debug.append("   - ^TNX (US 10-Year Treasury Yield)")
             debug.append("   - ^IRX (US 13-Week T-Bill)")
-            debug.append("   - ^FVX (US 5-Year Treasury)")
-            debug.append("   - RELIANCE.NS (if you want to use stock price as rate)")
+            debug.append("   - RELIANCE.NS (will calculate CAGR)")
             fallback = 6.83
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
         
         if len(gsec_data) < 2:
             debug.append(f"⚠️ **DEBUG**: Only {len(gsec_data)} rows returned (need at least 2)")
-            debug.append(f"💡 **TICKER '{ticker}' HAS INSUFFICIENT DATA**")
-            debug.append("💡 **TRY THESE WORKING TICKERS INSTEAD:**")
-            debug.append("   - ^TNX (US 10-Year Treasury Yield - most reliable)")
-            debug.append("   - ^IRX (US 13-Week T-Bill)")
-            debug.append("   - ^FVX (US 5-Year Treasury)")
-            debug.append("   - Or manually enter your desired rate in the field below")
+            debug.append(f"💡 **SUGGESTION**: Try ticker.history() with different parameters")
             fallback = 6.83
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
         
-        # Extract Close prices
-        debug.append(f"📊 **DEBUG**: Column structure: {gsec_data.columns.tolist()}")
+        # Extract close prices
+        close_prices = gsec_data['Close'].dropna()
         
-        # Handle both single-level and multi-level column indexes
-        try:
-            if 'Close' in gsec_data.columns:
-                close_data = gsec_data['Close']
-            elif ('Close', ticker) in gsec_data.columns:
-                close_data = gsec_data[('Close', ticker)]
-            else:
-                # Try to get first Close column if multi-index
-                close_cols = [col for col in gsec_data.columns if 'Close' in str(col)]
-                if close_cols:
-                    close_data = gsec_data[close_cols[0]]
-                else:
-                    debug.append(f"❌ **DEBUG**: 'Close' column not found. Available columns: {gsec_data.columns.tolist()}")
-                    fallback = 6.83
-                    debug.append(f"⚠️ Using fallback: {fallback}%")
-                    return fallback, debug
-            
-            # If close_data is a DataFrame (multi-column), take the first column
-            if isinstance(close_data, pd.DataFrame):
-                debug.append(f"📊 **DEBUG**: Close data is DataFrame with shape {close_data.shape}, taking first column")
-                close_data = close_data.iloc[:, 0]
-            
-            # Now close_data should be a Series, convert to list
-            yields = close_data.dropna().tolist()
-            debug.append(f"📈 **DEBUG**: Extracted {len(yields)} valid yield values")
-            
-        except Exception as e:
-            debug.append(f"❌ **DEBUG**: Error extracting Close data: {str(e)}")
+        if len(close_prices) < 2:
+            debug.append(f"⚠️ **DEBUG**: Insufficient valid close prices: {len(close_prices)}")
             fallback = 6.83
             debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
         
-        if not yields or len(yields) < 2:
-            debug.append(f"⚠️ **DEBUG**: Insufficient valid yields after dropna: {len(yields)}")
-            fallback = 6.83
-            debug.append(f"⚠️ Using fallback: {fallback}%")
-            return fallback, debug
+        # Get first and last prices
+        first_price = float(close_prices.iloc[0])
+        last_price = float(close_prices.iloc[-1])
         
-        # Use last 90 days for average (or all available data if less)
-        days_to_use = min(90, len(yields))
-        recent_yields = yields[-days_to_use:]
-        avg_yield = sum(recent_yields) / len(recent_yields)
-        latest_yield = yields[-1]
+        # Calculate number of years
+        first_date = close_prices.index[0]
+        last_date = close_prices.index[-1]
+        days_diff = (last_date - first_date).days
+        years = days_diff / 365.25
         
-        debug.append(f"📊 **DEBUG**: Using last {days_to_use} days of data")
-        debug.append(f"📊 **DEBUG**: Calculated avg: {avg_yield:.2f}% | Latest: {latest_yield:.2f}%")
+        debug.append(f"📊 **DEBUG**: Price change: {first_price:.2f} → {last_price:.2f}")
+        debug.append(f"📊 **DEBUG**: Time period: {years:.2f} years ({days_diff} days)")
         
-        # Informational warnings (not blocking)
-        if avg_yield < 0.1:
-            debug.append(f"💡 **INFO**: Value is very low ({avg_yield:.4f}%) - might be a percentage already divided by 100")
-        elif avg_yield > 100:
-            debug.append(f"💡 **INFO**: Value is very high ({avg_yield:.2f}) - this might be a stock price, not a yield/rate")
-            debug.append(f"💡 **SUGGESTION**: For government bonds/rates, try tickers like: ^TNX (US 10Y), ^FVX (US 5Y), or NIFTYGSEC.NS")
-        elif 15 < avg_yield <= 100:
-            debug.append(f"💡 **INFO**: Value {avg_yield:.2f}% is higher than typical government bond yields")
-            debug.append(f"💡 **SUGGESTION**: Verify this is the correct ticker for risk-free rate")
+        # CRITICAL LOGIC: Determine if this is a yield/rate or a price
+        # If values are typically < 100 and relatively stable, it's likely a yield already
+        # If values are > 100 or show significant growth, calculate CAGR
         
-        debug.append(f"✅ **SUCCESS**: Fetched {ticker} - Using {avg_yield:.2f}% as risk-free rate")
-        return round(avg_yield, 2), debug
+        avg_price = close_prices.mean()
+        price_volatility = close_prices.std() / avg_price if avg_price > 0 else 0
+        
+        debug.append(f"📊 **DEBUG**: Average value: {avg_price:.2f}")
+        debug.append(f"📊 **DEBUG**: Volatility (std/mean): {price_volatility:.2%}")
+        
+        # Decision logic
+        if avg_price < 50 and price_volatility < 0.5:
+            # Likely already a yield/rate (e.g., ^TNX returns 4.5 for 4.5%)
+            debug.append(f"💡 **INTERPRETATION**: Values appear to be yields/rates (avg={avg_price:.2f} < 50)")
+            
+            # Use recent average (last 90 days or all available)
+            days_to_use = min(90, len(close_prices))
+            recent_prices = close_prices.iloc[-days_to_use:]
+            avg_rate = recent_prices.mean()
+            latest_rate = last_price
+            
+            debug.append(f"📊 **RESULT**: Using average of last {days_to_use} days")
+            debug.append(f"📊 **RESULT**: Avg: {avg_rate:.2f}% | Latest: {latest_rate:.2f}%")
+            
+            return round(avg_rate, 2), debug
+            
+        else:
+            # Calculate CAGR (for stocks, indices, etc.)
+            debug.append(f"💡 **INTERPRETATION**: Values appear to be prices (avg={avg_price:.2f}), calculating CAGR")
+            
+            if first_price <= 0 or years <= 0:
+                debug.append(f"❌ **ERROR**: Cannot calculate CAGR (first_price={first_price}, years={years})")
+                fallback = 6.83
+                debug.append(f"⚠️ Using fallback: {fallback}%")
+                return fallback, debug
+            
+            # CAGR formula: ((End/Start)^(1/Years) - 1) * 100
+            cagr = ((last_price / first_price) ** (1 / years) - 1) * 100
+            
+            debug.append(f"📊 **CAGR CALCULATION**:")
+            debug.append(f"   - Formula: ({last_price:.2f}/{first_price:.2f})^(1/{years:.2f}) - 1")
+            debug.append(f"   - Result: {cagr:.2f}%")
+            
+            # Sanity check for CAGR
+            if cagr < -50 or cagr > 200:
+                debug.append(f"⚠️ **WARNING**: CAGR {cagr:.2f}% seems extreme")
+                debug.append(f"   This might indicate data quality issues")
+            
+            debug.append(f"✅ **SUCCESS**: Using {cagr:.2f}% as historical return rate")
+            
+            return round(cagr, 2), debug
         
     except Exception as e:
         debug.append(f"❌ **DEBUG**: Exception occurred: {type(e).__name__}")
@@ -5556,9 +5565,9 @@ def main():
         with rf_col1:
             custom_rf_ticker_listed = st.text_input(
                 "Yahoo Finance Ticker for Risk-Free Rate",
-                value="^TNX",
+                value="NIFTYGS10YR.NS",
                 key='custom_rf_ticker_listed_top',
-                help="Examples: ^TNX (US 10Y Treasury), ^IRX (US 3-month T-Bill), RELIANCE.NS (stock), or any ticker"
+                help="Enter any ticker - will calculate CAGR for stocks/indices, or use value directly for yields. Examples: NIFTYGS10YR.NS, ^TNX, RELIANCE.NS"
             )
         with rf_col2:
             st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_listed:.2f}%")
@@ -8680,9 +8689,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         with rf_col1:
             custom_rf_ticker_unlisted = st.text_input(
                 "Yahoo Finance Ticker for Risk-Free Rate",
-                value="^TNX",
+                value="NIFTYGS10YR.NS",
                 key='custom_rf_ticker_unlisted_top',
-                help="Examples: ^TNX (US 10Y Treasury), ^IRX (US 3-month T-Bill), RELIANCE.NS (stock), or any ticker"
+                help="Enter any ticker - will calculate CAGR for stocks/indices, or use value directly for yields. Examples: NIFTYGS10YR.NS, ^TNX, RELIANCE.NS"
             )
         with rf_col2:
             st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_unlisted:.2f}%")
@@ -9648,9 +9657,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
         with rf_col1:
             custom_rf_ticker_screener = st.text_input(
                 "Yahoo Finance Ticker for Risk-Free Rate",
-                value="^TNX",
+                value="NIFTYGS10YR.NS",
                 key='custom_rf_ticker_screener_top',
-                help="Examples: ^TNX (US 10Y Treasury), ^IRX (US 3-month T-Bill), RELIANCE.NS (stock), or any ticker"
+                help="Enter any ticker - will calculate CAGR for stocks/indices, or use value directly for yields. Examples: NIFTYGS10YR.NS, ^TNX, RELIANCE.NS"
             )
         with rf_col2:
             st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_screener:.2f}%")
