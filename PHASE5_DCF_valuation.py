@@ -9874,12 +9874,12 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         st.markdown("### 📊 Projection Drivers")
                         with st.expander("View Parameters", expanded=False):
                             drivers_data = [
-                                ['Revenue Growth', f"{drivers['avg_growth']:.2f}%", 'Historical CAGR'],
-                                ['EBITDA Margin', f"{drivers['avg_ebitda_margin']:.2f}%", 'Historical Avg'],
-                                ['CapEx/Revenue', f"{drivers['avg_capex_ratio']:.2f}%", 'Historical Avg'],
-                                ['Inventory Days', f"{wc_metrics['avg_inv_days']:.0f}", 'Historical'],
-                                ['Debtor Days', f"{wc_metrics['avg_deb_days']:.0f}", 'Historical'],
-                                ['Creditor Days', f"{wc_metrics['avg_cred_days']:.0f}", 'Historical']
+                                ['Revenue Growth', f"{drivers.get('avg_growth', 0):.2f}%", 'Historical CAGR'],
+                                ['EBITDA Margin', f"{drivers.get('avg_ebitda_margin', 0):.2f}%", 'Historical Avg'],
+                                ['CapEx/Revenue', f"{drivers.get('avg_capex_ratio', 0):.2f}%", 'Historical Avg'],
+                                ['Inventory Days', f"{wc_metrics.get('avg_inv_days', 0):.0f}", 'Historical'],
+                                ['Debtor Days', f"{wc_metrics.get('avg_deb_days', 0):.0f}", 'Historical'],
+                                ['Creditor Days', f"{wc_metrics.get('avg_cred_days', 0):.0f}", 'Historical']
                             ]
                             st.dataframe(pd.DataFrame(drivers_data, columns=['Parameter', 'Value', 'Source']),
                                        use_container_width=True, hide_index=True, height=200)
