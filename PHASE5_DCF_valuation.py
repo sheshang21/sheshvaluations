@@ -9276,8 +9276,8 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 'company_name': company_name,
                 'num_shares': num_shares,
                 'terminal_growth': terminal_growth,
-                'tax_rate': tax_rate_input,
-                'wacc': wacc_input if wacc_input > 0 else None
+                'tax_rate': tax_rate,
+                'wacc': manual_discount_rate_unlisted if manual_discount_rate_unlisted > 0 else None
             }
             
             # Check if inputs changed
