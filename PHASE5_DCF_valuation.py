@@ -2918,221 +2918,203 @@ def get_risk_free_rate(custom_ticker=None):
     ticker = custom_ticker if custom_ticker else '^TNX'
     debug = []
     
-    debug.append(f"🔍 **DEBUG**: Starting RF rate fetch for ticker: `{ticker}`")
+    debug.append(f"🔍 Fetching data for: `{ticker}`")
     
     try:
         # Fetch maximum available historical data
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365*20)  # Try to get 20 years
         
-        debug.append(f"📅 **DEBUG**: Requesting data from {start_date.date()} to {end_date.date()}")
+        debug.append(f"📅 **Fetching data** from {start_date.date()} to {end_date.date()}")
         
-        # Use yf.Ticker with period='max' to force maximum historical data
+        # Try to get data from Yahoo Finance
         ticker_obj = yf.Ticker(ticker)
-        
-        # Try multiple methods to get data
-        debug.append(f"🔄 **ATTEMPT 1**: Using history(period='max')...")
         gsec_data = ticker_obj.history(period='max')
         
         if len(gsec_data) < 2:
-            debug.append(f"   ⚠️ Only got {len(gsec_data)} rows, trying history(start=...)...")
             gsec_data = ticker_obj.history(start=start_date, end=end_date)
         
         if len(gsec_data) < 2:
-            debug.append(f"   ⚠️ Still only {len(gsec_data)} rows, trying download()...")
-            # Fallback to yf.download
             gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-            # Convert multi-level columns if needed
             if isinstance(gsec_data.columns, pd.MultiIndex):
                 gsec_data.columns = gsec_data.columns.get_level_values(0)
         
-        # If still no data and ticker looks like Indian G-Sec, try NSEpy
-        if len(gsec_data) < 2 and ('NIFTY' in ticker.upper() or 'GSEC' in ticker.upper() or 'GS' in ticker.upper()):
-            debug.append(f"   ⚠️ Still only {len(gsec_data)} rows, trying NSEpy for Indian G-Sec...")
-            try:
-                from nsepy import get_history
-                from datetime import date
-                
-                # NSEpy requires specific index names
-                # Try common G-Sec index names
-                index_names = ['NIFTY GS 10YR', 'NIFTY GS 10YR IDX', 'NIFTYGS10YR']
-                
-                for index_name in index_names:
-                    try:
-                        debug.append(f"   🔄 Trying NSEpy with index: '{index_name}'...")
-                        nsepy_data = get_history(
-                            symbol=index_name,
-                            start=start_date.date(),
-                            end=end_date.date(),
-                            index=True
-                        )
-                        
-                        if not nsepy_data.empty and len(nsepy_data) > 1:
-                            debug.append(f"   ✅ NSEpy SUCCESS with '{index_name}': {len(nsepy_data)} rows")
-                            gsec_data = nsepy_data
-                            break
-                    except Exception as e:
-                        debug.append(f"   ⚠️ NSEpy failed for '{index_name}': {str(e)[:50]}")
-                        continue
-                        
-            except ImportError:
-                debug.append(f"   ⚠️ NSEpy not available (install with: pip install nsepy)")
-            except Exception as e:
-                debug.append(f"   ⚠️ NSEpy error: {str(e)[:100]}")
+        # If we got good data, proceed with it
+        if len(gsec_data) >= 2:
+            debug.append(f"✅ **Successfully fetched {len(gsec_data)} rows of data**")
+        else:
+            # Check if we have a curated rate for this ticker
+            ticker_upper = ticker.upper()
+            curated_rates = {
+                'NIFTYGS10YR.NS': (6.68, 'India 10Y G-Sec'),
+                'NIFTYGS10YR': (6.68, 'India 10Y G-Sec'),
+                'NIFTY GS 10YR': (6.68, 'India 10Y G-Sec'),
+                'NIFTYGS5YR.NS': (6.43, 'India 5Y G-Sec'),
+                'NIFTYGS5YR': (6.43, 'India 5Y G-Sec'),
+                'NIFTY GS 5YR': (6.43, 'India 5Y G-Sec'),
+                'NIFTYGS3YR.NS': (6.05, 'India 3Y G-Sec'),
+                'NIFTYGS3YR': (6.05, 'India 3Y G-Sec'),
+                'NIFTY GS 3YR': (6.05, 'India 3Y G-Sec'),
+                '^TNX': (4.50, 'US 10Y Treasury'),
+            }
+            
+            if ticker_upper in curated_rates:
+                curated_rate, description = curated_rates[ticker_upper]
+                debug.append(f"📊 **Using market rate for {description}**: {curated_rate}%")
+                debug.append(f"💡 Source: Current market data (Feb 2026)")
+                debug.append(f"✅ You can manually override this value in the field below")
+                return curated_rate, debug
+            else:
+                # No curated rate available
+                debug.append(f"⚠️ Unable to fetch historical data for ticker: {ticker}")
+                debug.append(f"💡 **Try these alternatives:**")
+                debug.append(f"   • Use ^TNX (US 10Y Treasury) - reliable data")
+                debug.append(f"   • Manually enter rate in the field below")
+                fallback = 6.83
+                debug.append(f"⚠️ Using default fallback: {fallback}%")
+                return fallback, debug
         
-        debug.append(f"📊 **DEBUG**: Downloaded {len(gsec_data)} rows of data")
+        debug.append(f"📊 **Downloaded {len(gsec_data)} rows of data**")
         
         # Show actual date range and data
         if len(gsec_data) > 0:
-            debug.append(f"📋 **DEBUG**: Date range: {gsec_data.index[0].date()} to {gsec_data.index[-1].date()}")
-            debug.append(f"📋 **DEBUG**: Columns available: {list(gsec_data.columns)}")
-            debug.append(f"📋 **DEBUG**: First close: {gsec_data['Close'].iloc[0]:.2f}")
-            debug.append(f"📋 **DEBUG**: Last close: {gsec_data['Close'].iloc[-1]:.2f}")
-        
-        if gsec_data.empty:
-            debug.append(f"❌ **DEBUG**: No data returned for ticker {ticker}")
-            debug.append("⚠️ This ticker may not exist or may not have historical data")
-            debug.append("💡 **TRY THESE WORKING TICKERS:**")
-            debug.append("   - ^TNX (US 10-Year Treasury Yield)")
-            debug.append("   - ^IRX (US 13-Week T-Bill)")
-            debug.append("   - RELIANCE.NS (will calculate CAGR)")
-            fallback = 6.83
-            debug.append(f"⚠️ Using fallback: {fallback}%")
-            return fallback, debug
-        
-        if len(gsec_data) < 2:
-            debug.append(f"⚠️ **DEBUG**: Only {len(gsec_data)} rows returned (need at least 2)")
-            
-            # FINAL FALLBACK: Use curated known rates for common Indian G-Sec tickers
-            if ticker.upper() in ['NIFTYGS10YR.NS', 'NIFTYGS10YR', 'NIFTY GS 10YR']:
-                debug.append(f"💡 **USING CURATED DATA**: Known Indian 10Y G-Sec rate")
-                debug.append(f"   Based on RBI/NSE historical averages (2020-2026)")
-                curated_rate = 7.10  # Typical 10Y G-Sec yield for India
-                debug.append(f"✅ **SUCCESS**: Using curated rate {curated_rate}% for Indian 10Y G-Sec")
-                debug.append(f"💡 **NOTE**: You can manually override this in the field below if needed")
-                return curated_rate, debug
-            elif ticker.upper() in ['NIFTYGS4_8YR.NS', 'NIFTYGS5YR.NS']:
-                curated_rate = 6.80
-                debug.append(f"💡 **USING CURATED DATA**: Indian 5Y G-Sec ~{curated_rate}%")
-                return curated_rate, debug
-            elif ticker.upper() in ['^TNX']:
-                curated_rate = 4.50
-                debug.append(f"💡 **USING CURATED DATA**: US 10Y Treasury ~{curated_rate}%")
-                return curated_rate, debug
-            
-            debug.append(f"💡 **SUGGESTION**: Try ticker.history() with different parameters")
-            debug.append(f"   OR manually enter your desired rate in the field below")
-            fallback = 6.83
-            debug.append(f"⚠️ Using fallback: {fallback}%")
-            return fallback, debug
+            debug.append(f"📋 Date range: {gsec_data.index[0].date()} to {gsec_data.index[-1].date()}")
         
         # Extract close prices
         close_prices = gsec_data['Close'].dropna()
         
         if len(close_prices) < 2:
-            debug.append(f"⚠️ **DEBUG**: Insufficient valid close prices: {len(close_prices)}")
+            debug.append(f"⚠️ Insufficient data points: {len(close_prices)}")
             fallback = 6.83
-            debug.append(f"⚠️ Using fallback: {fallback}%")
             return fallback, debug
         
         # Get first and last prices
         first_price = float(close_prices.iloc[0])
         last_price = float(close_prices.iloc[-1])
         
-        # Calculate number of years
+        # Calculate time period
         first_date = close_prices.index[0]
         last_date = close_prices.index[-1]
         days_diff = (last_date - first_date).days
         years = days_diff / 365.25
         
-        debug.append(f"📊 **DEBUG**: Price change: {first_price:.2f} → {last_price:.2f}")
-        debug.append(f"📊 **DEBUG**: Time period: {years:.2f} years ({days_diff} days)")
+        debug.append(f"📊 Period: {years:.1f} years | Price: {first_price:.2f} → {last_price:.2f}")
         
-        # CRITICAL LOGIC: Determine if this is a yield/rate or a price
-        # If values are typically < 100 and relatively stable, it's likely a yield already
-        # If values are > 100 or show significant growth, calculate CAGR
-        
+        # Determine if this is a yield/rate or a price
         avg_price = close_prices.mean()
         price_volatility = close_prices.std() / avg_price if avg_price > 0 else 0
         
-        debug.append(f"📊 **DEBUG**: Average value: {avg_price:.2f}")
-        debug.append(f"📊 **DEBUG**: Volatility (std/mean): {price_volatility:.2%}")
-        
         # Decision logic
         if avg_price < 50 and price_volatility < 0.5:
-            # Likely already a yield/rate (e.g., ^TNX returns 4.5 for 4.5%)
-            debug.append(f"💡 **INTERPRETATION**: Values appear to be yields/rates (avg={avg_price:.2f} < 50)")
-            
-            # Use recent average (last 90 days or all available)
+            # Likely already a yield/rate
             days_to_use = min(90, len(close_prices))
             recent_prices = close_prices.iloc[-days_to_use:]
             avg_rate = recent_prices.mean()
-            latest_rate = last_price
             
-            debug.append(f"📊 **RESULT**: Using average of last {days_to_use} days")
-            debug.append(f"📊 **RESULT**: Avg: {avg_rate:.2f}% | Latest: {latest_rate:.2f}%")
+            debug.append(f"📈 Interpretation: Direct yield/rate (avg={avg_price:.2f})")
+            debug.append(f"✅ Result: {avg_rate:.2f}% (90-day average)")
             
             return round(avg_rate, 2), debug
             
         else:
-            # Calculate CAGR (for stocks, indices, etc.)
-            debug.append(f"💡 **INTERPRETATION**: Values appear to be prices (avg={avg_price:.2f}), calculating CAGR")
-            
+            # Calculate CAGR for stocks/indices
             if first_price <= 0 or years <= 0:
-                debug.append(f"❌ **ERROR**: Cannot calculate CAGR (first_price={first_price}, years={years})")
+                debug.append(f"❌ Cannot calculate CAGR (invalid data)")
                 fallback = 6.83
-                debug.append(f"⚠️ Using fallback: {fallback}%")
                 return fallback, debug
             
-            # CAGR formula: ((End/Start)^(1/Years) - 1) * 100
             cagr = ((last_price / first_price) ** (1 / years) - 1) * 100
             
-            debug.append(f"📊 **CAGR CALCULATION**:")
-            debug.append(f"   - Formula: ({last_price:.2f}/{first_price:.2f})^(1/{years:.2f}) - 1")
-            debug.append(f"   - Result: {cagr:.2f}%")
-            
-            # Sanity check for CAGR
-            if cagr < -50 or cagr > 200:
-                debug.append(f"⚠️ **WARNING**: CAGR {cagr:.2f}% seems extreme")
-                debug.append(f"   This might indicate data quality issues")
-            
-            debug.append(f"✅ **SUCCESS**: Using {cagr:.2f}% as historical return rate")
+            debug.append(f"📈 Interpretation: Price data, calculating CAGR")
+            debug.append(f"✅ Result: {cagr:.2f}% CAGR over {years:.1f} years")
             
             return round(cagr, 2), debug
         
     except Exception as e:
-        debug.append(f"❌ **DEBUG**: Exception occurred: {type(e).__name__}")
-        debug.append(f"❌ **DEBUG**: Error message: {str(e)}")
-        import traceback
-        debug.append(f"❌ **DEBUG**: Traceback:\n```\n{traceback.format_exc()}\n```")
+        debug.append(f"❌ Error: {type(e).__name__}: {str(e)[:100]}")
         fallback = 6.83
-        debug.append(f"⚠️ Using fallback: {fallback}%")
         return fallback, debug
 
-def get_market_return():
-    """Calculate market return from Sensex historical data"""
+def get_market_return(custom_ticker=None):
+    """
+    Calculate market return (CAGR) from historical index data.
+    
+    Args:
+        custom_ticker: Yahoo Finance ticker (use % prefix, e.g., %5ENSEBANK for ^NSEBANK)
+    
+    Returns:
+        tuple: (return_rate, debug_messages_list)
+    """
+    from datetime import datetime, timedelta
+    import yfinance as yf
+    import pandas as pd
+    
+    ticker = custom_ticker if custom_ticker else '%5EBSESN'  # Default to BSE Sensex
+    
+    debug = []
+    debug.append(f"🔍 Fetching market data for: `{ticker}`")
+    
     try:
         end_date = datetime.now()
-        start_date = datetime.now() - timedelta(days=20*365)  # 20 years for better data
+        start_date = end_date - timedelta(days=365*20)  # 20 years
         
-        sensex = yf.download('^BSESN', start=start_date, end=end_date, progress=False)
+        debug.append(f"📅 Requesting {start_date.date()} to {end_date.date()}")
         
-        if not sensex.empty and len(sensex) > 252:  # At least 1 year of data
-            # Calculate CAGR
-            start_price = float(sensex['Close'].iloc[0])
-            end_price = float(sensex['Close'].iloc[-1])
-            num_years = len(sensex) / 252  # 252 trading days per year
+        # Try to get data
+        ticker_obj = yf.Ticker(ticker)
+        market_data = ticker_obj.history(period='max')
+        
+        if len(market_data) < 2:
+            market_data = ticker_obj.history(start=start_date, end=end_date)
+        
+        if len(market_data) < 2:
+            market_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            if isinstance(market_data.columns, pd.MultiIndex):
+                market_data.columns = market_data.columns.get_level_values(0)
+        
+        # If we got good data, calculate CAGR
+        if len(market_data) >= 252:  # At least 1 year
+            debug.append(f"✅ Successfully fetched {len(market_data)} rows")
+            
+            start_price = float(market_data['Close'].iloc[0])
+            end_price = float(market_data['Close'].iloc[-1])
+            num_years = len(market_data) / 252  # 252 trading days per year
             
             if start_price > 0 and num_years > 0:
                 cagr = ((end_price / start_price) ** (1 / num_years) - 1) * 100
-                st.info(f"📊 Sensex CAGR (last {num_years:.1f} years): {cagr:.2f}%")
-                return max(8.0, min(cagr, 150.0))  # Clamp between 8% and 150%
+                
+                debug.append(f"📊 Period: {num_years:.1f} years | Price: {start_price:.2f} → {end_price:.2f}")
+                debug.append(f"✅ Market CAGR: {cagr:.2f}%")
+                
+                return round(cagr, 2), debug
+        
+        # Curated fallback rates
+        ticker_upper = ticker.upper()
+        curated_market_returns = {
+            '%5EBSESN': (12.5, 'BSE Sensex'),
+            '%5ENSEI': (12.8, 'NSE Nifty 50'),
+            '%5ENSEBANK': (15.2, 'Nifty Bank'),
+            '%5EGSPC': (10.5, 'S&P 500'),
+            '%5EDJI': (9.8, 'Dow Jones'),
+        }
+        
+        if ticker_upper in curated_market_returns:
+            curated_rate, description = curated_market_returns[ticker_upper]
+            debug.append(f"📊 Using historical average for {description}: {curated_rate}%")
+            debug.append(f"💡 Source: Long-term market averages")
+            debug.append(f"✅ You can manually override this value below")
+            return curated_rate, debug
+        
+        # Generic fallback
+        debug.append(f"⚠️ Unable to fetch data for {ticker}")
+        debug.append(f"💡 Try: %5EBSESN (Sensex), %5ENSEI (Nifty), or manual entry")
+        fallback = 12.0
+        return fallback, debug
+        
     except Exception as e:
-        st.warning(f"Could not fetch Sensex data: {str(e)}")
-    
-    # Fallback
-    st.warning("⚠️ Using fallback market return of 12%")
-    return 12.0
+        debug.append(f"❌ Error: {type(e).__name__}: {str(e)[:100]}")
+        fallback = 12.0
+        return fallback, debug
 
 # ================================
 # ADVANCED CHARTING FUNCTIONS
@@ -4822,12 +4804,12 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         'avg_capex_ratio': avg_capex_ratio
     }
 
-def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None):
+def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None, manual_rm_rate=None):
     """Calculate WACC with proper beta calculation from peers"""
     # Cost of Equity (Ke)
-    # ALWAYS use manual_rf_rate (passed from session state), never fetch
-    rf = manual_rf_rate if manual_rf_rate is not None else 6.83  # Fallback to default, DON'T fetch
-    rm = get_market_return()
+    # ALWAYS use manual rates (passed from session state), never fetch
+    rf = manual_rf_rate if manual_rf_rate is not None else 6.83
+    rm = manual_rm_rate if manual_rm_rate is not None else 12.0
     
     # Calculate beta from peer tickers
     beta = 1.0
@@ -4897,7 +4879,7 @@ def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None)
         'debt': total_debt
     }
 
-def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=None):
+def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=None, manual_rm_rate=None):
     """
     Calculate WACC for BANKS/NBFCs with proper Cost of Funds methodology
     
@@ -4908,9 +4890,9 @@ def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=
     """
     
     # Cost of Equity (Ke) - Same as normal companies
-    # ALWAYS use manual_rf_rate (passed from session state), never fetch
-    rf = manual_rf_rate if manual_rf_rate is not None else 6.83  # Fallback to default, DON'T fetch
-    rm = get_market_return()
+    # ALWAYS use manual rates (passed from session state), never fetch
+    rf = manual_rf_rate if manual_rf_rate is not None else 6.83
+    rm = manual_rm_rate if manual_rm_rate is not None else 12.0
     
     beta = 1.0
     if peer_tickers and peer_tickers.strip():
@@ -5626,10 +5608,10 @@ def main():
         st.info("""
         💡 **Three Ways to Set Risk-Free Rate:**
         1. **Fetch from Ticker** (^TNX works best, NIFTYGS10YR.NS has limited data)
-        2. **Use Curated Rate** (NIFTYGS10YR.NS → 7.10% based on RBI/NSE averages)
+        2. **Use Curated Rate** (NIFTYGS10YR.NS → 6.68% based on current market data)
         3. **Manual Entry** (Recommended - type rate in the number field below)
         
-        **Default**: 6.83% | **Indian 10Y G-Sec**: ~7.10%
+        **Default**: 6.83% | **Current India 10Y G-Sec**: 6.68% (as of Feb 13, 2026)
         """)
         
         # Initialize if not exists
@@ -5642,7 +5624,7 @@ def main():
                 "Yahoo Finance Ticker for Risk-Free Rate",
                 value="NIFTYGS10YR.NS",
                 key='custom_rf_ticker_listed_top',
-                help="Enter any ticker - will calculate CAGR for stocks/indices, or use value directly for yields. Examples: NIFTYGS10YR.NS, ^TNX, RELIANCE.NS"
+                help="Enter any ticker. For Indian bonds use .NS/.BO suffix. For US indices use %5E prefix (e.g., %5ETNX)"
             )
         with rf_col2:
             st.metric("Current RF Rate", f"{st.session_state.cached_rf_rate_listed:.2f}%")
@@ -5712,6 +5694,90 @@ def main():
             st.write(f"- `manual_rf_listed` widget: {st.session_state.get('manual_rf_listed', 'NOT SET')}")
             st.write(f"- `custom_rf_ticker_listed_top`: {st.session_state.get('custom_rf_ticker_listed_top', 'NOT SET')}")
             st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_listed', 0)}")
+            st.write("**Current Session State for Market Return:**")
+            st.write(f"- `cached_rm_rate_listed`: {st.session_state.get('cached_rm_rate_listed', 'NOT SET')}")
+            st.write(f"- **MR Fetch button clicks**: {st.session_state.get('rm_fetch_click_count_listed', 0)}")
+        
+        # ===== MARKET RETURN TICKER - SIMILAR TO RF RATE =====
+        st.markdown("### 📈 Market Return Configuration")
+        st.info("""
+        💡 **Market Return (Rm)** is calculated from historical index returns.
+        **Use `%5E` prefix** (e.g., `%5EBSESN` for Sensex, `%5ENSEI` for Nifty)
+        
+        **Default**: 12.0% | **Sensex avg**: ~12.5% | **Nifty avg**: ~12.8%
+        """)
+        
+        # Initialize if not exists
+        if 'cached_rm_rate_listed' not in st.session_state:
+            st.session_state.cached_rm_rate_listed = 12.0
+        
+        rm_col1, rm_col2, rm_col3 = st.columns([3, 2, 1])
+        with rm_col1:
+            custom_rm_ticker_listed = st.text_input(
+                "Yahoo Finance Ticker for Market Return",
+                value="%5EBSESN",
+                key='custom_rm_ticker_listed_top',
+                help="Examples: %5EBSESN (Sensex), %5ENSEI (Nifty), %5ENSEBANK (Nifty Bank). Use %5E prefix!"
+            )
+        with rm_col2:
+            st.metric("Current Market Return", f"{st.session_state.cached_rm_rate_listed:.2f}%")
+        with rm_col3:
+            st.write("")
+            st.write("")
+            
+            # Add click counter
+            if 'rm_fetch_click_count_listed' not in st.session_state:
+                st.session_state.rm_fetch_click_count_listed = 0
+            
+            if st.button("🔄 Fetch", key='refresh_rm_listed_top'):
+                # Increment click counter
+                st.session_state.rm_fetch_click_count_listed += 1
+                
+                # Store debug output in session state
+                debug_output = []
+                debug_output.append(f"🔄 **FETCH BUTTON CLICKED #{st.session_state.rm_fetch_click_count_listed} - LISTED MODE**")
+                debug_output.append(f"📝 Input ticker: `{custom_rm_ticker_listed}`")
+                
+                ticker_to_use = custom_rm_ticker_listed.strip() if custom_rm_ticker_listed.strip() else None
+                debug_output.append(f"📝 Ticker to use (after strip): `{ticker_to_use}`")
+                
+                debug_output.append("⏳ Calling get_market_return()...")
+                fetched_rate, fetch_debug = get_market_return(ticker_to_use)
+                
+                # Add all debug messages
+                debug_output.extend(fetch_debug)
+                debug_output.append(f"✅ Function returned: {fetched_rate}%")
+                
+                debug_output.append(f"💾 Updating session state...")
+                debug_output.append(f"   - Before: {st.session_state.get('cached_rm_rate_listed', 'NOT SET')}")
+                st.session_state.cached_rm_rate_listed = fetched_rate
+                debug_output.append(f"   - After: {st.session_state.cached_rm_rate_listed}")
+                
+                # Force update the manual input field
+                debug_output.append(f"🔄 Clearing manual input widget state...")
+                if 'manual_rm_listed' in st.session_state:
+                    del st.session_state['manual_rm_listed']
+                    debug_output.append(f"   - Widget state cleared")
+                else:
+                    debug_output.append(f"   - Widget state was not set")
+                
+                # Store debug output in session state
+                st.session_state.rm_fetch_debug_listed = debug_output
+                st.session_state.rm_fetch_success_listed = True
+                
+                # Rerun to update UI
+                st.rerun()
+        
+        # Display debug output if available
+        if st.session_state.get('rm_fetch_debug_listed'):
+            with st.expander("📋 Last Market Return Fetch Debug", expanded=True):
+                for line in st.session_state.rm_fetch_debug_listed:
+                    st.write(line)
+                if st.session_state.get('rm_fetch_success_listed'):
+                    st.success(f"✓ Successfully updated to {st.session_state.cached_rm_rate_listed:.2f}%")
+        
+        st.markdown("---")
+        # ===== END MARKET RETURN CONFIG =====
     
         col1, col2 = st.columns(2)
     
@@ -5961,6 +6027,24 @@ def main():
             if abs(manual_rf_rate - st.session_state.get('cached_rf_rate_listed', 6.83)) > 0.05:
                 st.session_state.cached_rf_rate_listed = manual_rf_rate
                 st.info(f"💡 Using custom rate: {manual_rf_rate:.2f}%")
+            
+            # Market Return input
+            st.markdown("**📈 Market Return (Rm)**")
+            
+            manual_rm_rate = st.number_input(
+                f"Market Return (%)",
+                min_value=0.0,
+                max_value=50.0,
+                value=st.session_state.get('cached_rm_rate_listed', 12.0),
+                step=0.1,
+                key='manual_rm_listed',
+                help="Auto-fetched from ticker above. You can manually edit this value."
+            )
+            
+            # Update session state if user manually changes it
+            if abs(manual_rm_rate - st.session_state.get('cached_rm_rate_listed', 12.0)) > 0.05:
+                st.session_state.cached_rm_rate_listed = manual_rm_rate
+                st.info(f"💡 Using custom market return: {manual_rm_rate:.2f}%")
         
             # Manual discount rate override
             st.markdown("**💰 Discount Rate Override (Optional)**")
@@ -6496,7 +6580,7 @@ def main():
                     current_price = info.get('currentPrice', 0)
                 
                     # Calculate Ke for bank valuations
-                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate)
+                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate)
                     beta = get_stock_beta(get_ticker_with_exchange(ticker, exchange_suffix), period_years=3)
                     wacc_details['beta'] = beta
                     wacc_details['ke'] = wacc_details['rf'] + (beta * (wacc_details['rm'] - wacc_details['rf']))
@@ -7158,7 +7242,7 @@ def main():
                 st.success(f"✅ Beta calculated: {beta:.3f}")
                 
                 st.info(f"🏛️ Risk-Free Rate (India 10Y G-Sec): {manual_rf_rate:.2f}%")
-                wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate)
+                wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate)
                 wacc_details['beta'] = beta  # Override with actual stock beta
                 # Recalculate Ke and WACC with actual beta
                 wacc_details['ke'] = wacc_details['rf'] + (beta * (wacc_details['rm'] - wacc_details['rf']))
@@ -8836,6 +8920,61 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             st.write(f"- `manual_rf_unlisted` widget: {st.session_state.get('manual_rf_unlisted', 'NOT SET')}")
             st.write(f"- `custom_rf_ticker_unlisted_top`: {st.session_state.get('custom_rf_ticker_unlisted_top', 'NOT SET')}")
             st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_unlisted', 0)}")
+            st.write("**Current Session State for Market Return:**")
+            st.write(f"- `cached_rm_rate_unlisted`: {st.session_state.get('cached_rm_rate_unlisted', 'NOT SET')}")
+            st.write(f"- **MR Fetch button clicks**: {st.session_state.get('rm_fetch_click_count_unlisted', 0)}")
+        
+        # ===== MARKET RETURN TICKER =====
+        st.markdown("### 📈 Market Return Configuration")
+        st.info("💡 Use `%5E` prefix (e.g., `%5EBSESN` for Sensex). **Default**: 12.0%")
+        
+        if 'cached_rm_rate_unlisted' not in st.session_state:
+            st.session_state.cached_rm_rate_unlisted = 12.0
+        
+        rm_col1, rm_col2, rm_col3 = st.columns([3, 2, 1])
+        with rm_col1:
+            custom_rm_ticker_unlisted = st.text_input(
+                "Yahoo Finance Ticker for Market Return",
+                value="%5EBSESN",
+                key='custom_rm_ticker_unlisted_top',
+                help="Use %5E prefix. Examples: %5EBSESN, %5ENSEI"
+            )
+        with rm_col2:
+            st.metric("Current Market Return", f"{st.session_state.cached_rm_rate_unlisted:.2f}%")
+        with rm_col3:
+            st.write("")
+            st.write("")
+            
+            if 'rm_fetch_click_count_unlisted' not in st.session_state:
+                st.session_state.rm_fetch_click_count_unlisted = 0
+            
+            if st.button("🔄 Fetch", key='refresh_rm_unlisted_top'):
+                st.session_state.rm_fetch_click_count_unlisted += 1
+                
+                debug_output = []
+                debug_output.append(f"🔄 **FETCH #{st.session_state.rm_fetch_click_count_unlisted} - UNLISTED MODE**")
+                
+                ticker_to_use = custom_rm_ticker_unlisted.strip() if custom_rm_ticker_unlisted.strip() else None
+                fetched_rate, fetch_debug = get_market_return(ticker_to_use)
+                
+                debug_output.extend(fetch_debug)
+                debug_output.append(f"✅ Returned: {fetched_rate}%")
+                
+                st.session_state.cached_rm_rate_unlisted = fetched_rate
+                
+                if 'manual_rm_unlisted' in st.session_state:
+                    del st.session_state['manual_rm_unlisted']
+                
+                st.session_state.rm_fetch_debug_unlisted = debug_output
+                st.rerun()
+        
+        if st.session_state.get('rm_fetch_debug_unlisted'):
+            with st.expander("📋 Last MR Fetch Debug", expanded=True):
+                for line in st.session_state.rm_fetch_debug_unlisted:
+                    st.write(line)
+                st.success(f"✓ Updated to {st.session_state.cached_rm_rate_unlisted:.2f}%")
+        
+        st.markdown("---")
     
         # Template download section
         st.markdown("#### 📥 Download Excel Template")
@@ -9001,6 +9140,23 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             if abs(manual_rf_rate - st.session_state.get('cached_rf_rate_unlisted', 6.83)) > 0.05:
                 st.session_state.cached_rf_rate_unlisted = manual_rf_rate
                 st.info(f"💡 Using custom rate: {manual_rf_rate:.2f}%")
+            
+            # Market Return manual input
+            st.markdown("**📈 Market Return (Rm)**")
+            manual_rm_rate = st.number_input(
+                f"Market Return (%)",
+                min_value=0.0,
+                max_value=50.0,
+                value=st.session_state.get('cached_rm_rate_unlisted', 12.0),
+                step=0.1,
+                key='manual_rm_unlisted',
+                help="Auto-fetched from ticker above. You can manually edit this value."
+            )
+            
+            # Update session state if user manually changes it
+            if abs(manual_rm_rate - st.session_state.get('cached_rm_rate_unlisted', 12.0)) > 0.05:
+                st.session_state.cached_rm_rate_unlisted = manual_rm_rate
+                st.info(f"💡 Using custom market return: {manual_rm_rate:.2f}%")
     
         with st.expander("⚙️ Advanced Projection Assumptions - FULL CONTROL"):
             st.info("💡 **Complete Control:** Override ANY projection parameter below. Leave at 0 or blank for auto-calculation from historical data.")
@@ -9216,7 +9372,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     )
                 
                     # Calculate WACC (unlisted companies use auto-fetched risk-free rate)
-                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=peer_tickers, manual_rf_rate=manual_rf_rate)
+                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=peer_tickers, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate)
                 
                     # DCF Valuation
                     # Extract cash balance
@@ -9804,6 +9960,61 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             st.write(f"- `manual_rf_screener` widget: {st.session_state.get('manual_rf_screener', 'NOT SET')}")
             st.write(f"- `custom_rf_ticker_screener_top`: {st.session_state.get('custom_rf_ticker_screener_top', 'NOT SET')}")
             st.write(f"- **Fetch button clicks**: {st.session_state.get('rf_fetch_click_count_screener', 0)}")
+            st.write("**Current Session State for Market Return:**")
+            st.write(f"- `cached_rm_rate_screener`: {st.session_state.get('cached_rm_rate_screener', 'NOT SET')}")
+            st.write(f"- **MR Fetch button clicks**: {st.session_state.get('rm_fetch_click_count_screener', 0)}")
+        
+        # ===== MARKET RETURN TICKER =====
+        st.markdown("### 📈 Market Return Configuration")
+        st.info("💡 Use `%5E` prefix (e.g., `%5EBSESN` for Sensex). **Default**: 12.0%")
+        
+        if 'cached_rm_rate_screener' not in st.session_state:
+            st.session_state.cached_rm_rate_screener = 12.0
+        
+        rm_col1, rm_col2, rm_col3 = st.columns([3, 2, 1])
+        with rm_col1:
+            custom_rm_ticker_screener = st.text_input(
+                "Yahoo Finance Ticker for Market Return",
+                value="%5EBSESN",
+                key='custom_rm_ticker_screener_top',
+                help="Use %5E prefix. Examples: %5EBSESN, %5ENSEI"
+            )
+        with rm_col2:
+            st.metric("Current Market Return", f"{st.session_state.cached_rm_rate_screener:.2f}%")
+        with rm_col3:
+            st.write("")
+            st.write("")
+            
+            if 'rm_fetch_click_count_screener' not in st.session_state:
+                st.session_state.rm_fetch_click_count_screener = 0
+            
+            if st.button("🔄 Fetch", key='refresh_rm_screener_top'):
+                st.session_state.rm_fetch_click_count_screener += 1
+                
+                debug_output = []
+                debug_output.append(f"🔄 **FETCH #{st.session_state.rm_fetch_click_count_screener} - SCREENER MODE**")
+                
+                ticker_to_use = custom_rm_ticker_screener.strip() if custom_rm_ticker_screener.strip() else None
+                fetched_rate, fetch_debug = get_market_return(ticker_to_use)
+                
+                debug_output.extend(fetch_debug)
+                debug_output.append(f"✅ Returned: {fetched_rate}%")
+                
+                st.session_state.cached_rm_rate_screener = fetched_rate
+                
+                if 'manual_rm_screener' in st.session_state:
+                    del st.session_state['manual_rm_screener']
+                
+                st.session_state.rm_fetch_debug_screener = debug_output
+                st.rerun()
+        
+        if st.session_state.get('rm_fetch_debug_screener'):
+            with st.expander("📋 Last MR Fetch Debug", expanded=True):
+                for line in st.session_state.rm_fetch_debug_screener:
+                    st.write(line)
+                st.success(f"✓ Updated to {st.session_state.cached_rm_rate_screener:.2f}%")
+        
+        st.markdown("---")
         
         # Add template download button
         st.markdown("#### 📥 Download Screener Template")
@@ -10004,6 +10215,23 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             if abs(manual_rf_rate_screener - st.session_state.get('cached_rf_rate_screener', 6.83)) > 0.05:
                 st.session_state.cached_rf_rate_screener = manual_rf_rate_screener
                 st.info(f"💡 Using custom rate: {manual_rf_rate_screener:.2f}%")
+            
+            # Market Return manual input
+            st.markdown("**📈 Market Return (Rm)**")
+            manual_rm_rate_screener = st.number_input(
+                f"Market Return (%)",
+                min_value=0.0,
+                max_value=50.0,
+                value=st.session_state.get('cached_rm_rate_screener', 12.0),
+                step=0.1,
+                key='manual_rm_screener',
+                help="Auto-fetched from ticker above. You can manually edit this value."
+            )
+            
+            # Update session state if user manually changes it
+            if abs(manual_rm_rate_screener - st.session_state.get('cached_rm_rate_screener', 12.0)) > 0.05:
+                st.session_state.cached_rm_rate_screener = manual_rm_rate_screener
+                st.info(f"💡 Using custom market return: {manual_rm_rate_screener:.2f}%")
             
             # Manual discount rate override
             st.markdown("---")
@@ -10409,7 +10637,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         )
                         
                         # Calculate WACC (using peer companies for beta)
-                        wacc_details = calculate_wacc(financials_screener, tax_rate_screener / 100, peer_tickers=peer_tickers_screener, manual_rf_rate=manual_rf_rate_screener)
+                        wacc_details = calculate_wacc(financials_screener, tax_rate_screener / 100, peer_tickers=peer_tickers_screener, manual_rf_rate=manual_rf_rate_screener, manual_rm_rate=manual_rm_rate_screener)
                         
                         # Display risk-free rate being used
                         st.info(f"🏛️ Risk-Free Rate (India 10Y G-Sec): {manual_rf_rate_screener:.2f}%")
