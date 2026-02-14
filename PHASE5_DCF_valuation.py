@@ -2946,6 +2946,40 @@ def get_risk_free_rate(custom_ticker=None):
             if isinstance(gsec_data.columns, pd.MultiIndex):
                 gsec_data.columns = gsec_data.columns.get_level_values(0)
         
+        # If still no data and ticker looks like Indian G-Sec, try NSEpy
+        if len(gsec_data) < 2 and ('NIFTY' in ticker.upper() or 'GSEC' in ticker.upper() or 'GS' in ticker.upper()):
+            debug.append(f"   ⚠️ Still only {len(gsec_data)} rows, trying NSEpy for Indian G-Sec...")
+            try:
+                from nsepy import get_history
+                from datetime import date
+                
+                # NSEpy requires specific index names
+                # Try common G-Sec index names
+                index_names = ['NIFTY GS 10YR', 'NIFTY GS 10YR IDX', 'NIFTYGS10YR']
+                
+                for index_name in index_names:
+                    try:
+                        debug.append(f"   🔄 Trying NSEpy with index: '{index_name}'...")
+                        nsepy_data = get_history(
+                            symbol=index_name,
+                            start=start_date.date(),
+                            end=end_date.date(),
+                            index=True
+                        )
+                        
+                        if not nsepy_data.empty and len(nsepy_data) > 1:
+                            debug.append(f"   ✅ NSEpy SUCCESS with '{index_name}': {len(nsepy_data)} rows")
+                            gsec_data = nsepy_data
+                            break
+                    except Exception as e:
+                        debug.append(f"   ⚠️ NSEpy failed for '{index_name}': {str(e)[:50]}")
+                        continue
+                        
+            except ImportError:
+                debug.append(f"   ⚠️ NSEpy not available (install with: pip install nsepy)")
+            except Exception as e:
+                debug.append(f"   ⚠️ NSEpy error: {str(e)[:100]}")
+        
         debug.append(f"📊 **DEBUG**: Downloaded {len(gsec_data)} rows of data")
         
         # Show actual date range and data
