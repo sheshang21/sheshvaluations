@@ -5685,13 +5685,9 @@ def main():
                 # Rerun to update UI
                 st.rerun()
         
-        # Display debug output if available (persists across reruns)
-        if st.session_state.get('rf_fetch_debug_listed'):
-            with st.expander("📋 Last Fetch Debug Output", expanded=True):
-                for line in st.session_state.rf_fetch_debug_listed:
-                    st.write(line)
-                if st.session_state.get('rf_fetch_success_listed'):
-                    st.success(f"✓ Successfully updated to {st.session_state.cached_rf_rate_listed:.2f}%")
+        # Display success message without debug details
+        if st.session_state.get('rf_fetch_success_listed'):
+            st.success(f"✓ Risk-free rate updated to {st.session_state.cached_rf_rate_listed:.2f}%")
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
@@ -5772,13 +5768,9 @@ def main():
                 # Rerun to update UI
                 st.rerun()
         
-        # Display debug output if available
-        if st.session_state.get('rm_fetch_debug_listed'):
-            with st.expander("📋 Last Market Return Fetch Debug", expanded=True):
-                for line in st.session_state.rm_fetch_debug_listed:
-                    st.write(line)
-                if st.session_state.get('rm_fetch_success_listed'):
-                    st.success(f"✓ Successfully updated to {st.session_state.cached_rm_rate_listed:.2f}%")
+        # Display success message without debug details
+        if st.session_state.get('rm_fetch_success_listed'):
+            st.success(f"✓ Market return updated to {st.session_state.cached_rm_rate_listed:.2f}%")
         
         st.markdown("---")
         # ===== END MARKET RETURN CONFIG =====
@@ -8896,13 +8888,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 # Rerun to update UI
                 st.rerun()
         
-        # Display debug output if available (persists across reruns)
-        if st.session_state.get('rf_fetch_debug_unlisted'):
-            with st.expander("📋 Last Fetch Debug Output", expanded=True):
-                for line in st.session_state.rf_fetch_debug_unlisted:
-                    st.write(line)
-                if st.session_state.get('rf_fetch_success_unlisted'):
-                    st.success(f"✓ Successfully updated to {st.session_state.cached_rf_rate_unlisted:.2f}%")
+        # Display success message without debug details
+        if st.session_state.get('rf_fetch_success_unlisted'):
+            st.success(f"✓ Risk-free rate updated to {st.session_state.cached_rf_rate_unlisted:.2f}%")
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
@@ -8960,11 +8948,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 st.session_state.rm_fetch_debug_unlisted = debug_output
                 st.rerun()
         
+        # Display success message without debug details
         if st.session_state.get('rm_fetch_debug_unlisted'):
-            with st.expander("📋 Last MR Fetch Debug", expanded=True):
-                for line in st.session_state.rm_fetch_debug_unlisted:
-                    st.write(line)
-                st.success(f"✓ Updated to {st.session_state.cached_rm_rate_unlisted:.2f}%")
+            st.success(f"✓ Market return updated to {st.session_state.cached_rm_rate_unlisted:.2f}%")
         
         st.markdown("---")
     
@@ -9926,13 +9912,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 # Rerun to update UI
                 st.rerun()
         
-        # Display debug output if available (persists across reruns)
-        if st.session_state.get('rf_fetch_debug_screener'):
-            with st.expander("📋 Last Fetch Debug Output", expanded=True):
-                for line in st.session_state.rf_fetch_debug_screener:
-                    st.write(line)
-                if st.session_state.get('rf_fetch_success_screener'):
-                    st.success(f"✓ Successfully updated to {st.session_state.cached_rf_rate_screener:.2f}%")
+        # Display success message without debug details
+        if st.session_state.get('rf_fetch_success_screener'):
+            st.success(f"✓ Risk-free rate updated to {st.session_state.cached_rf_rate_screener:.2f}%")
         
         st.markdown("---")
         # ===== END RF RATE CONFIG =====
@@ -9990,11 +9972,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 st.session_state.rm_fetch_debug_screener = debug_output
                 st.rerun()
         
+        # Display success message without debug details
         if st.session_state.get('rm_fetch_debug_screener'):
-            with st.expander("📋 Last MR Fetch Debug", expanded=True):
-                for line in st.session_state.rm_fetch_debug_screener:
-                    st.write(line)
-                st.success(f"✓ Updated to {st.session_state.cached_rm_rate_screener:.2f}%")
+            st.success(f"✓ Market return updated to {st.session_state.cached_rm_rate_screener:.2f}%")
         
         st.markdown("---")
         
