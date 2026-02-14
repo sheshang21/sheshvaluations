@@ -2927,9 +2927,24 @@ def get_risk_free_rate(custom_ticker=None):
         
         debug.append(f"📅 **DEBUG**: Requesting data from {start_date.date()} to {end_date.date()}")
         
-        # Use yf.Ticker instead of yf.download for better control
+        # Use yf.Ticker with period='max' to force maximum historical data
         ticker_obj = yf.Ticker(ticker)
-        gsec_data = ticker_obj.history(start=start_date, end=end_date)
+        
+        # Try multiple methods to get data
+        debug.append(f"🔄 **ATTEMPT 1**: Using history(period='max')...")
+        gsec_data = ticker_obj.history(period='max')
+        
+        if len(gsec_data) < 2:
+            debug.append(f"   ⚠️ Only got {len(gsec_data)} rows, trying history(start=...)...")
+            gsec_data = ticker_obj.history(start=start_date, end=end_date)
+        
+        if len(gsec_data) < 2:
+            debug.append(f"   ⚠️ Still only {len(gsec_data)} rows, trying download()...")
+            # Fallback to yf.download
+            gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            # Convert multi-level columns if needed
+            if isinstance(gsec_data.columns, pd.MultiIndex):
+                gsec_data.columns = gsec_data.columns.get_level_values(0)
         
         debug.append(f"📊 **DEBUG**: Downloaded {len(gsec_data)} rows of data")
         
