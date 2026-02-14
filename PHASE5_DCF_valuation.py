@@ -3056,19 +3056,20 @@ def get_market_return(custom_ticker=None):
     
     try:
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=365*20)  # 20 years
         
-        debug.append(f"📅 Requesting {start_date.date()} to {end_date.date()}")
+        debug.append(f"📅 Requesting maximum available historical data")
         
-        # Try to get data
+        # Try to get ALL available data using period='max'
         ticker_obj = yf.Ticker(ticker)
         market_data = ticker_obj.history(period='max')
         
         if len(market_data) < 2:
+            # Fallback: try with date range
+            start_date = end_date - timedelta(days=365*30)  # 30 years as fallback
             market_data = ticker_obj.history(start=start_date, end=end_date)
         
         if len(market_data) < 2:
-            market_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            market_data = yf.download(ticker, period='max', progress=False)
             if isinstance(market_data.columns, pd.MultiIndex):
                 market_data.columns = market_data.columns.get_level_values(0)
         
@@ -5454,13 +5455,25 @@ def calculate_dcf_valuation(projections, wacc_details, terminal_growth, num_shar
 def main():
     """Main DCF UI function - can be called from dashboard or run standalone"""
     
-    # ===== INITIALIZE RISK-FREE RATE ONCE AT STARTUP =====
+    # ===== INITIALIZE RISK-FREE RATE AND MARKET RETURN ONCE AT STARTUP =====
     # This runs ONLY ONCE when app starts, not on every interaction
     if 'rf_rate_initialized' not in st.session_state:
         st.session_state.rf_rate_initialized = True
         st.session_state.cached_rf_rate_listed = 6.83  # Default fallback
-        st.session_state.cached_rf_rate_screener = 6.83  # Default fallback
-        # Don't fetch automatically - let user click button when ready
+        st.session_state.cached_rf_rate_screener = 6.83
+        st.session_state.cached_rf_rate_unlisted = 6.83
+        
+        # Calculate actual Sensex CAGR for market return (not hardcoded 12%)
+        try:
+            sensex_return, _ = get_market_return('%5EBSESN')
+            st.session_state.cached_rm_rate_listed = sensex_return
+            st.session_state.cached_rm_rate_screener = sensex_return
+            st.session_state.cached_rm_rate_unlisted = sensex_return
+        except:
+            # Fallback only if fetch fails
+            st.session_state.cached_rm_rate_listed = 12.0
+            st.session_state.cached_rm_rate_screener = 12.0
+            st.session_state.cached_rm_rate_unlisted = 12.0
     
     # Initialize session state for peer auto-fetch (Screener mode)
     if 'nse_peers_input' not in st.session_state:
@@ -5659,15 +5672,11 @@ def main():
                 debug_output.append(f"💾 Updating session state...")
                 debug_output.append(f"   - Before: {st.session_state.get('cached_rf_rate_listed', 'NOT SET')}")
                 st.session_state.cached_rf_rate_listed = fetched_rate
+                st.session_state.manual_rf_listed = fetched_rate  # CRITICAL: Update widget state too!
                 debug_output.append(f"   - After: {st.session_state.cached_rf_rate_listed}")
                 
-                # Force update the manual input field
-                debug_output.append(f"🔄 Clearing manual input widget state...")
-                if 'manual_rf_listed' in st.session_state:
-                    del st.session_state['manual_rf_listed']
-                    debug_output.append(f"   - Widget state cleared")
-                else:
-                    debug_output.append(f"   - Widget state was not set")
+                # No need to delete widget state - we're updating it directly
+                debug_output.append(f"🔄 Widget state updated to: {fetched_rate}%")
                 
                 # Store debug output in session state
                 st.session_state.rf_fetch_debug_listed = debug_output
@@ -5751,15 +5760,10 @@ def main():
                 debug_output.append(f"💾 Updating session state...")
                 debug_output.append(f"   - Before: {st.session_state.get('cached_rm_rate_listed', 'NOT SET')}")
                 st.session_state.cached_rm_rate_listed = fetched_rate
+                st.session_state.manual_rm_listed = fetched_rate  # CRITICAL: Update widget state too!
                 debug_output.append(f"   - After: {st.session_state.cached_rm_rate_listed}")
                 
-                # Force update the manual input field
-                debug_output.append(f"🔄 Clearing manual input widget state...")
-                if 'manual_rm_listed' in st.session_state:
-                    del st.session_state['manual_rm_listed']
-                    debug_output.append(f"   - Widget state cleared")
-                else:
-                    debug_output.append(f"   - Widget state was not set")
+                debug_output.append(f"🔄 Widget state updated to: {fetched_rate}%")
                 
                 # Store debug output in session state
                 st.session_state.rm_fetch_debug_listed = debug_output
@@ -6011,40 +6015,36 @@ def main():
             # Risk-free rate override
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
             
-            # CRITICAL FIX: Use session state value directly, not a separate variable
-            # This ensures the fetched value is actually used
+            # Initialize widget state from session if not already set
+            if 'manual_rf_listed' not in st.session_state:
+                st.session_state.manual_rf_listed = st.session_state.get('cached_rf_rate_listed', 6.83)
+            
             manual_rf_rate = st.number_input(
                 f"Risk-Free Rate (%)",
                 min_value=0.0,
                 max_value=20.0,
-                value=st.session_state.get('cached_rf_rate_listed', 6.83),
+                value=st.session_state.manual_rf_listed,
                 step=0.1,
                 key='manual_rf_listed',
                 help="Auto-fetched from ticker above. You can manually edit this value."
             )
             
-            # Update session state if user manually changes it
-            if abs(manual_rf_rate - st.session_state.get('cached_rf_rate_listed', 6.83)) > 0.05:
-                st.session_state.cached_rf_rate_listed = manual_rf_rate
-                st.info(f"💡 Using custom rate: {manual_rf_rate:.2f}%")
-            
             # Market Return input
             st.markdown("**📈 Market Return (Rm)**")
+            
+            # Initialize widget state from session if not already set
+            if 'manual_rm_listed' not in st.session_state:
+                st.session_state.manual_rm_listed = st.session_state.get('cached_rm_rate_listed', 12.0)
             
             manual_rm_rate = st.number_input(
                 f"Market Return (%)",
                 min_value=0.0,
                 max_value=50.0,
-                value=st.session_state.get('cached_rm_rate_listed', 12.0),
+                value=st.session_state.manual_rm_listed,
                 step=0.1,
                 key='manual_rm_listed',
                 help="Auto-fetched from ticker above. You can manually edit this value."
             )
-            
-            # Update session state if user manually changes it
-            if abs(manual_rm_rate - st.session_state.get('cached_rm_rate_listed', 12.0)) > 0.05:
-                st.session_state.cached_rm_rate_listed = manual_rm_rate
-                st.info(f"💡 Using custom market return: {manual_rm_rate:.2f}%")
         
             # Manual discount rate override
             st.markdown("**💰 Discount Rate Override (Optional)**")
@@ -8885,15 +8885,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 debug_output.append(f"💾 Updating session state...")
                 debug_output.append(f"   - Before: {st.session_state.get('cached_rf_rate_unlisted', 'NOT SET')}")
                 st.session_state.cached_rf_rate_unlisted = fetched_rate
+                st.session_state.manual_rf_unlisted = fetched_rate  # Update widget state
                 debug_output.append(f"   - After: {st.session_state.cached_rf_rate_unlisted}")
-                
-                # Force update the manual input field
-                debug_output.append(f"🔄 Clearing manual input widget state...")
-                if 'manual_rf_unlisted' in st.session_state:
-                    del st.session_state['manual_rf_unlisted']
-                    debug_output.append(f"   - Widget state cleared")
-                else:
-                    debug_output.append(f"   - Widget state was not set")
+                debug_output.append(f"🔄 Widget state updated to: {fetched_rate}%")
                 
                 # Store debug output in session state
                 st.session_state.rf_fetch_debug_unlisted = debug_output
@@ -8961,9 +8955,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 debug_output.append(f"✅ Returned: {fetched_rate}%")
                 
                 st.session_state.cached_rm_rate_unlisted = fetched_rate
-                
-                if 'manual_rm_unlisted' in st.session_state:
-                    del st.session_state['manual_rm_unlisted']
+                st.session_state.manual_rm_unlisted = fetched_rate  # Update widget state
                 
                 st.session_state.rm_fetch_debug_unlisted = debug_output
                 st.rerun()
@@ -9126,37 +9118,35 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             
             # Risk-free rate manual input
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
+            
+            if 'manual_rf_unlisted' not in st.session_state:
+                st.session_state.manual_rf_unlisted = st.session_state.get('cached_rf_rate_unlisted', 6.83)
+            
             manual_rf_rate = st.number_input(
                 f"Risk-Free Rate (%)",
                 min_value=0.0,
                 max_value=20.0,
-                value=st.session_state.get('cached_rf_rate_unlisted', 6.83),
+                value=st.session_state.manual_rf_unlisted,
                 step=0.1,
                 key='manual_rf_unlisted',
                 help="Auto-fetched from ticker above. You can manually edit this value."
             )
             
-            # Update session state if user manually changes it
-            if abs(manual_rf_rate - st.session_state.get('cached_rf_rate_unlisted', 6.83)) > 0.05:
-                st.session_state.cached_rf_rate_unlisted = manual_rf_rate
-                st.info(f"💡 Using custom rate: {manual_rf_rate:.2f}%")
-            
             # Market Return manual input
             st.markdown("**📈 Market Return (Rm)**")
+            
+            if 'manual_rm_unlisted' not in st.session_state:
+                st.session_state.manual_rm_unlisted = st.session_state.get('cached_rm_rate_unlisted', 12.0)
+            
             manual_rm_rate = st.number_input(
                 f"Market Return (%)",
                 min_value=0.0,
                 max_value=50.0,
-                value=st.session_state.get('cached_rm_rate_unlisted', 12.0),
+                value=st.session_state.manual_rm_unlisted,
                 step=0.1,
                 key='manual_rm_unlisted',
                 help="Auto-fetched from ticker above. You can manually edit this value."
             )
-            
-            # Update session state if user manually changes it
-            if abs(manual_rm_rate - st.session_state.get('cached_rm_rate_unlisted', 12.0)) > 0.05:
-                st.session_state.cached_rm_rate_unlisted = manual_rm_rate
-                st.info(f"💡 Using custom market return: {manual_rm_rate:.2f}%")
     
         with st.expander("⚙️ Advanced Projection Assumptions - FULL CONTROL"):
             st.info("💡 **Complete Control:** Override ANY projection parameter below. Leave at 0 or blank for auto-calculation from historical data.")
@@ -9925,15 +9915,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 debug_output.append(f"💾 Updating session state...")
                 debug_output.append(f"   - Before: {st.session_state.get('cached_rf_rate_screener', 'NOT SET')}")
                 st.session_state.cached_rf_rate_screener = fetched_rate
+                st.session_state.manual_rf_screener = fetched_rate  # Update widget state
                 debug_output.append(f"   - After: {st.session_state.cached_rf_rate_screener}")
-                
-                # Force update the manual input field
-                debug_output.append(f"🔄 Clearing manual input widget state...")
-                if 'manual_rf_screener' in st.session_state:
-                    del st.session_state['manual_rf_screener']
-                    debug_output.append(f"   - Widget state cleared")
-                else:
-                    debug_output.append(f"   - Widget state was not set")
+                debug_output.append(f"🔄 Widget state updated to: {fetched_rate}%")
                 
                 # Store debug output in session state
                 st.session_state.rf_fetch_debug_screener = debug_output
@@ -10001,9 +9985,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                 debug_output.append(f"✅ Returned: {fetched_rate}%")
                 
                 st.session_state.cached_rm_rate_screener = fetched_rate
-                
-                if 'manual_rm_screener' in st.session_state:
-                    del st.session_state['manual_rm_screener']
+                st.session_state.manual_rm_screener = fetched_rate  # Update widget state
                 
                 st.session_state.rm_fetch_debug_screener = debug_output
                 st.rerun()
@@ -10200,38 +10182,34 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             # Risk-free rate override
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
             
-            # CRITICAL FIX: Use session state value directly
+            if 'manual_rf_screener' not in st.session_state:
+                st.session_state.manual_rf_screener = st.session_state.get('cached_rf_rate_screener', 6.83)
+            
             manual_rf_rate_screener = st.number_input(
                 f"Risk-Free Rate (%)",
                 min_value=0.0,
                 max_value=20.0,
-                value=st.session_state.get('cached_rf_rate_screener', 6.83),
+                value=st.session_state.manual_rf_screener,
                 step=0.1,
                 key='manual_rf_screener',
                 help="Auto-fetched from ticker above. You can manually edit this value."
             )
             
-            # Update session state if user manually changes it
-            if abs(manual_rf_rate_screener - st.session_state.get('cached_rf_rate_screener', 6.83)) > 0.05:
-                st.session_state.cached_rf_rate_screener = manual_rf_rate_screener
-                st.info(f"💡 Using custom rate: {manual_rf_rate_screener:.2f}%")
-            
             # Market Return manual input
             st.markdown("**📈 Market Return (Rm)**")
+            
+            if 'manual_rm_screener' not in st.session_state:
+                st.session_state.manual_rm_screener = st.session_state.get('cached_rm_rate_screener', 12.0)
+            
             manual_rm_rate_screener = st.number_input(
                 f"Market Return (%)",
                 min_value=0.0,
                 max_value=50.0,
-                value=st.session_state.get('cached_rm_rate_screener', 12.0),
+                value=st.session_state.manual_rm_screener,
                 step=0.1,
                 key='manual_rm_screener',
                 help="Auto-fetched from ticker above. You can manually edit this value."
             )
-            
-            # Update session state if user manually changes it
-            if abs(manual_rm_rate_screener - st.session_state.get('cached_rm_rate_screener', 12.0)) > 0.05:
-                st.session_state.cached_rm_rate_screener = manual_rm_rate_screener
-                st.info(f"💡 Using custom market return: {manual_rm_rate_screener:.2f}%")
             
             # Manual discount rate override
             st.markdown("---")
