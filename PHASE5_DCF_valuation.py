@@ -4865,13 +4865,15 @@ def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None,
     equity = financials['equity'][0]
     total_capital = equity + total_debt
     
-    # Handle weights for debt-free companies
-    if total_capital > 0 and equity > 0:
+    # Handle weights - CRITICAL: Support negative equity scenarios
+    # When equity is negative, weights can be >100% or negative
+    if total_capital != 0:
         we = equity / total_capital
-        wd = total_debt / total_capital if total_debt > 0 else 0.0
+        wd = total_debt / total_capital
     else:
-        we = 1.0  # 100% equity financed
-        wd = 0.0  # No debt
+        # Edge case: total capital = 0 (equity = -debt)
+        we = 1.0
+        wd = 0.0
     
     wacc = (we * ke) + (wd * kd_after_tax)
     
@@ -4966,10 +4968,12 @@ def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=
     # Capital structure weights
     total_capital = equity_current + total_liabilities_current
     
-    if total_capital > 0:
+    # Handle weights - CRITICAL: Support negative equity scenarios
+    if total_capital != 0:
         we = equity_current / total_capital
         wd = total_liabilities_current / total_capital
     else:
+        # Edge case: total capital = 0 (equity = -debt)
         we = 0.20  # Banks typically have low equity weight
         wd = 0.80
     
