@@ -8507,7 +8507,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                     height=380
                                 )
                                 
-                                st.plotly_chart(fig_pie, use_container_width=True)
+                                st.plotly_chart(fig_pie, use_container_width=True, key="rim_pie_absolute")
                                 
                                 # Show actual signed values in a bar chart instead
                                 st.markdown("#### 📊 Visual: Signed Value Components")
@@ -8535,7 +8535,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                     showlegend=False
                                 )
                                 
-                                st.plotly_chart(fig_bar, use_container_width=True)
+                                st.plotly_chart(fig_bar, use_container_width=True, key="rim_bar_signed")
                                 
                             else:
                                 # All positive - normal pie chart
@@ -8553,9 +8553,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                     height=380
                                 )
                                 
-                                st.plotly_chart(fig_pie, use_container_width=True)
-                                
-                                st.plotly_chart(fig_pie, use_container_width=True)
+                                st.plotly_chart(fig_pie, use_container_width=True, key="rim_pie_positive")
                             
                             # Detailed breakdown in columns
                             col_buildup1, col_buildup2 = st.columns([2, 1])
