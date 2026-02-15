@@ -9443,20 +9443,6 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     with col4:
                         st.metric("WACC", f"{wacc_details['wacc']:.2f}%")
                 
-                    # Tabs for detailed output
-                    # Build dynamic tab list based on enabled models
-                    tab_list = ["📊 Historical Financials"]
-                    if run_dcf_unlisted:
-                        tab_list.extend(["📋 Assumptions & Inputs", "📈 Projections", "💰 FCF Working", "🎯 WACC Calculation", "🏆 DCF Summary", "📉 Sensitivity Analysis"])
-                    if run_rim_unlisted:
-                        tab_list.append("📚 RIM Valuation")
-                    if run_comp_unlisted and peer_tickers:
-                        tab_list.append("📊 Comparative Valuation")
-                    
-                    tabs = st.tabs(tab_list)
-                    tab_idx = 0
-                    
-                    # Tab: Historical Financials
                     # ============================================
                     # DISPLAY FAIR VALUES SUMMARY AT TOP
                     # ============================================
@@ -9803,14 +9789,13 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 st.markdown("### 📊 RIM Parameters Used")
                                 
                                 rim_params_df = pd.DataFrame({
-                                    'Parameter': ['Required Return (r)', 'Terminal Growth (g)', 'Projection Years', 
-                                                'Initial Book Value', 'Average ROE'],
+                                    'Parameter': ['Cost of Equity (r)', 'Terminal Growth (g)', 'Initial Book Value', 'ROE', 'BV Growth Rate'],
                                     'Value': [
-                                        f"{rim_results_unlisted.get('required_return', 0):.2f}%",
+                                        f"{rim_results_unlisted.get('cost_of_equity', 0):.2f}%",
                                         f"{rim_results_unlisted.get('terminal_growth', 0):.2f}%",
-                                        f"{rim_results_unlisted.get('projection_years', 0)}",
-                                        f"₹{rim_results_unlisted.get('initial_book_value', 0):.2f}L",
-                                        f"{rim_results_unlisted.get('avg_roe', 0):.2f}%"
+                                        f"₹{rim_results_unlisted.get('current_book_value', 0)/100000:.2f}L",
+                                        f"{rim_results_unlisted.get('roe', 0):.2f}%",
+                                        f"{rim_results_unlisted.get('bv_growth', 0):.2f}%"
                                     ]
                                 })
                                 st.dataframe(rim_params_df, use_container_width=True, hide_index=True)
@@ -9818,14 +9803,16 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 st.markdown("---")
                                 st.markdown("### 📈 Projected Residual Income")
                                 
-                                if 'projections' in rim_results_unlisted:
+                                if 'projections' in rim_results_unlisted and rim_results_unlisted['projections']:
+                                    # Extract data from list of projection dicts
+                                    proj_list = rim_results_unlisted['projections']
                                     rim_proj_df = pd.DataFrame({
-                                        'Year': [f"Year {i+1}" for i in range(len(rim_results_unlisted['projections']['net_income']))],
-                                        'Net Income': rim_results_unlisted['projections']['net_income'],
-                                        'Book Value': rim_results_unlisted['projections']['book_value'],
-                                        'Equity Charge': rim_results_unlisted['projections']['equity_charge'],
-                                        'Residual Income': rim_results_unlisted['projections']['residual_income'],
-                                        'PV of RI': rim_results_unlisted['projections']['pv_residual_income']
+                                        'Year': [f"Year {p['year']}" for p in proj_list],
+                                        'Net Income': [p['net_income']/100000 for p in proj_list],  # Convert to Lacs
+                                        'Book Value': [p['book_value']/100000 for p in proj_list],  # Convert to Lacs
+                                        'Equity Charge': [p['book_value']/100000 * rim_results_unlisted['cost_of_equity']/100 for p in proj_list],
+                                        'Residual Income': [p['residual_income']/100000 for p in proj_list],  # Convert to Lacs
+                                        'PV of RI': [p['pv_ri']/100000 for p in proj_list]  # Convert to Lacs
                                     })
                                     numeric_cols = rim_proj_df.select_dtypes(include=[np.number]).columns.tolist()
                                     format_dict = {col: '{:.2f}' for col in numeric_cols}
@@ -9835,13 +9822,13 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 st.markdown("### 🎯 RIM Valuation Summary")
                                 
                                 rim_summary_df = pd.DataFrame({
-                                    'Component': ['Initial Book Value', 'PV of Projected RI', 'PV of Terminal RI', 
+                                    'Component': ['Current Book Value', 'PV of Projected RI', 'PV of Terminal RI', 
                                                 'Total Equity Value', 'Number of Shares', 'Fair Value per Share'],
                                     'Value': [
-                                        f"₹{rim_results_unlisted.get('initial_book_value', 0):.2f}L",
-                                        f"₹{rim_results_unlisted.get('pv_residual_income', 0):.2f}L",
-                                        f"₹{rim_results_unlisted.get('pv_terminal_value', 0):.2f}L",
-                                        f"₹{rim_results_unlisted.get('equity_value', 0):.2f}L",
+                                        f"₹{rim_results_unlisted.get('current_book_value', 0)/100000:.2f}L",
+                                        f"₹{rim_results_unlisted.get('sum_pv_ri', 0)/100000:.2f}L",
+                                        f"₹{rim_results_unlisted.get('terminal_ri_pv', 0)/100000:.2f}L",
+                                        f"₹{rim_results_unlisted.get('total_equity_value', 0)/100000:.2f}L",
                                         f"{num_shares:,}",
                                         f"₹{rim_results_unlisted.get('value_per_share', 0):.2f}"
                                     ]
