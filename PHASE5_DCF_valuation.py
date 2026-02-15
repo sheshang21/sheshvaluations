@@ -10564,7 +10564,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     # Detect year columns
                     year_cols_screener_all = detect_screener_year_columns(df_bs_screener)
                     
-                    if len(year_cols_screener_all) < 3:
+                    if len(year_cols_screener_all) < 2:
                         st.error("Need at least 3 years of historical data in Excel file")
                         st.stop()
                     
