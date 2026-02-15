@@ -9498,12 +9498,17 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             )
                             
                             if comp_results and 'valuations' in comp_results:
-                                valuations = comp_results.get('valuations', {})
-                                if 'pe' in valuations:
-                                    comp_avg = valuations['pe'].get('fair_value_avg', 0)
-                                    comp_median = valuations['pe'].get('fair_value_median', 0)
+                                all_avg = []
+                                all_median = []
+                                for val_data in comp_results['valuations'].values():
+                                    all_avg.append(val_data['fair_value_avg'])
+                                    all_median.append(val_data['fair_value_median'])
+                                
+                                if all_avg:
+                                    comp_avg = np.mean(all_avg)
+                                    comp_median = np.median(all_median)
                         except Exception as e:
-                            st.warning(f"Comparative valuation pre-calculation error: {str(e)}")
+                            pass  # Silent fail
                     
                     # Display fair values in columns
                     fv_cols = st.columns(len(fair_values_dict) + 2)  # +2 for comp avg/median
@@ -9514,11 +9519,17 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             st.metric(method, f"₹{value:.2f}")
                         col_idx += 1
                     
-                    # Placeholders for comparative
+                    # Display comparative with actual values if calculated
                     with fv_cols[col_idx]:
-                        st.metric("Comp (Avg)", "Calculating..." if run_comp_unlisted and peer_tickers else "N/A")
+                        if comp_avg and comp_avg > 0:
+                            st.metric("Comp (Avg)", f"₹{comp_avg:.2f}")
+                        else:
+                            st.metric("Comp (Avg)", "N/A")
                     with fv_cols[col_idx + 1]:
-                        st.metric("Comp (Median)", "Calculating..." if run_comp_unlisted and peer_tickers else "N/A")
+                        if comp_median and comp_median > 0:
+                            st.metric("Comp (Median)", f"₹{comp_median:.2f}")
+                        else:
+                            st.metric("Comp (Median)", "N/A")
                     
                     st.markdown("---")
                     
