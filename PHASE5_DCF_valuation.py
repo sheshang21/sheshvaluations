@@ -3707,6 +3707,10 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 
         else:
             # Unlisted company - arrays have NEWEST first, so [0] = latest
+            equity_lacs = target_financials['equity'][0]  # Latest equity in Lacs
+            equity_rupees = equity_lacs * 100000  # Convert to Rupees
+            book_value_per_share = equity_rupees / target_shares if target_shares > 0 else 0
+            
             results['target'] = {
                 'name': 'Target Company (Unlisted)',
                 'current_price': 0,
@@ -3716,7 +3720,7 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 'revenue': target_financials['revenue'][0] * 100000,  # [0] = latest year
                 'ebitda': target_financials['ebitda'][0] * 100000,
                 'net_income': target_financials['nopat'][0] * 100000,  # Using NOPAT as proxy
-                'book_value_per_share': 0,
+                'book_value_per_share': book_value_per_share,  # CALCULATE from equity
                 'total_debt': (target_financials['st_debt'][0] + target_financials['lt_debt'][0]) * 100000,
                 'cash': target_financials['cash'][0] * 100000,
                 'eps': (target_financials['nopat'][0] * 100000) / target_shares if target_shares > 0 else 0,
@@ -9477,9 +9481,29 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         except Exception as e:
                             st.warning(f"RIM calculation encountered an error: {str(e)}")
                     
-                    # Comparative valuations will be added later
+                    # Comparative valuations - calculate early if comparative is enabled
                     comp_avg = None
                     comp_median = None
+                    
+                    if run_comp_unlisted and peer_tickers and peer_tickers.strip():
+                        try:
+                            comp_results = perform_comparative_valuation(
+                                target_ticker=None,
+                                comp_tickers_str=peer_tickers,
+                                target_financials=financials,
+                                target_shares=num_shares,
+                                exchange_suffix="NS",
+                                projections=projections if run_dcf_unlisted else None,
+                                use_screener_peers=False
+                            )
+                            
+                            if comp_results and 'valuations' in comp_results:
+                                valuations = comp_results.get('valuations', {})
+                                if 'pe' in valuations:
+                                    comp_avg = valuations['pe'].get('fair_value_avg', 0)
+                                    comp_median = valuations['pe'].get('fair_value_median', 0)
+                        except Exception as e:
+                            st.warning(f"Comparative valuation pre-calculation error: {str(e)}")
                     
                     # Display fair values in columns
                     fv_cols = st.columns(len(fair_values_dict) + 2)  # +2 for comp avg/median
@@ -9849,64 +9873,38 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             st.subheader("📊 Comparative (Relative) Valuation")
                             
                             if peer_tickers and peer_tickers.strip():
-                                with st.spinner("Fetching comparable companies data..."):
-                                    try:
-                                        comp_results = perform_comparative_valuation(
-                                            target_ticker=None,  # Unlisted company has no ticker
-                                            comp_tickers_str=peer_tickers,
-                                            target_financials=financials,
-                                            target_shares=num_shares,
-                                            exchange_suffix="NS",
-                                            projections=projections if run_dcf_unlisted else None,
-                                            use_screener_peers=False
-                                        )
+                                # Reuse comp_results calculated earlier
+                                if 'comp_results' in locals() and comp_results and 'comparables' in comp_results:
+                                    st.markdown("### 📊 Peer Company Multiples")
+                                    
+                                    peer_df = pd.DataFrame(comp_results['comparables'])
+                                    if not peer_df.empty:
+                                        st.dataframe(peer_df, use_container_width=True)
                                         
-                                        if not comp_results:
-                                            st.error("❌ Comparative valuation returned no results. Check if peer tickers are valid.")
-                                        elif 'comparables' not in comp_results:
-                                            st.error(f"❌ Comparative valuation returned incomplete results. Keys: {list(comp_results.keys())}")
-                                        elif comp_results and 'comparables' in comp_results:
-                                            st.markdown("### 📊 Peer Company Multiples")
-                                            
-                                            peer_df = pd.DataFrame(comp_results['comparables'])
-                                            if not peer_df.empty:
-                                                st.dataframe(peer_df, use_container_width=True)
-                                                
-                                                st.markdown("---")
-                                                st.markdown("### 🎯 Valuation Summary")
-                                                
-                                                # Extract valuations from results['valuations']
-                                                valuations = comp_results.get('valuations', {})
-                                                
-                                                # Update fair values with comp data
-                                                if 'pe' in valuations:
-                                                    comp_avg = valuations['pe'].get('fair_value_avg', 0)
-                                                    comp_median = valuations['pe'].get('fair_value_median', 0)
-                                                
-                                                val_summary = pd.DataFrame({
-                                                    'Multiple': ['P/E Ratio', 'P/B Ratio', 'EV/EBITDA'],
-                                                    'Average': [
-                                                        f"₹{valuations.get('pe', {}).get('fair_value_avg', 0):.2f}" if 'pe' in valuations else 'N/A',
-                                                        f"₹{valuations.get('pb', {}).get('fair_value_avg', 0):.2f}" if 'pb' in valuations else 'N/A',
-                                                        f"₹{valuations.get('ev_ebitda', {}).get('fair_value_avg', 0):.2f}" if 'ev_ebitda' in valuations else 'N/A'
-                                                    ],
-                                                    'Median': [
-                                                        f"₹{valuations.get('pe', {}).get('fair_value_median', 0):.2f}" if 'pe' in valuations else 'N/A',
-                                                        f"₹{valuations.get('pb', {}).get('fair_value_median', 0):.2f}" if 'pb' in valuations else 'N/A',
-                                                        f"₹{valuations.get('ev_ebitda', {}).get('fair_value_median', 0):.2f}" if 'ev_ebitda' in valuations else 'N/A'
-                                                    ]
-                                                })
-                                                st.dataframe(val_summary, use_container_width=True, hide_index=True)
-                                                
-                                                # Update top metrics
-                                                if comp_avg and comp_avg > 0:
-                                                    fv_cols[len(fair_values_dict)].metric("Comp (Avg)", f"₹{comp_avg:.2f}")
-                                                if comp_median and comp_median > 0:
-                                                    fv_cols[len(fair_values_dict) + 1].metric("Comp (Median)", f"₹{comp_median:.2f}")
-                                        else:
-                                            st.warning("Could not fetch peer company data")
-                                    except Exception as e:
-                                        st.error(f"Comparative valuation error: {str(e)}")
+                                        st.markdown("---")
+                                        st.markdown("### 🎯 Valuation Summary")
+                                        
+                                        # Extract valuations from results['valuations']
+                                        valuations = comp_results.get('valuations', {})
+                                        
+                                        val_summary = pd.DataFrame({
+                                            'Multiple': ['P/E Ratio', 'P/B Ratio', 'EV/EBITDA'],
+                                            'Average': [
+                                                f"₹{valuations.get('pe', {}).get('fair_value_avg', 0):.2f}" if 'pe' in valuations else 'N/A',
+                                                f"₹{valuations.get('pb', {}).get('fair_value_avg', 0):.2f}" if 'pb' in valuations else 'N/A',
+                                                f"₹{valuations.get('ev_ebitda', {}).get('fair_value_avg', 0):.2f}" if 'ev_ebitda' in valuations else 'N/A'
+                                            ],
+                                            'Median': [
+                                                f"₹{valuations.get('pe', {}).get('fair_value_median', 0):.2f}" if 'pe' in valuations else 'N/A',
+                                                f"₹{valuations.get('pb', {}).get('fair_value_median', 0):.2f}" if 'pb' in valuations else 'N/A',
+                                                f"₹{valuations.get('ev_ebitda', {}).get('fair_value_median', 0):.2f}" if 'ev_ebitda' in valuations else 'N/A'
+                                            ]
+                                        })
+                                        st.dataframe(val_summary, use_container_width=True, hide_index=True)
+                                    else:
+                                        st.warning("No peer data available")
+                                else:
+                                    st.warning("Comparative valuation could not be calculated. Check peer tickers.")
                             else:
                                 st.info("No peer tickers provided. Enter peer tickers to enable comparative valuation.")
                         
