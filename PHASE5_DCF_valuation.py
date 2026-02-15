@@ -9861,10 +9861,14 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                             use_screener_peers=False
                                         )
                                         
-                                        if comp_results and 'peer_data' in comp_results:
+                                        if not comp_results:
+                                            st.error("❌ Comparative valuation returned no results. Check if peer tickers are valid.")
+                                        elif 'comparables' not in comp_results:
+                                            st.error(f"❌ Comparative valuation returned incomplete results. Keys: {list(comp_results.keys())}")
+                                        elif comp_results and 'comparables' in comp_results:
                                             st.markdown("### 📊 Peer Company Multiples")
                                             
-                                            peer_df = pd.DataFrame(comp_results['peer_data'])
+                                            peer_df = pd.DataFrame(comp_results['comparables'])
                                             if not peer_df.empty:
                                                 st.dataframe(peer_df, use_container_width=True)
                                                 
