@@ -9852,9 +9852,13 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 with st.spinner("Fetching comparable companies data..."):
                                     try:
                                         comp_results = perform_comparative_valuation(
-                                            financials,
-                                            peer_tickers,
-                                            num_shares
+                                            target_ticker=None,  # Unlisted company has no ticker
+                                            comp_tickers_str=peer_tickers,
+                                            target_financials=financials,
+                                            target_shares=num_shares,
+                                            exchange_suffix="NS",
+                                            projections=projections if run_dcf_unlisted else None,
+                                            use_screener_peers=False
                                         )
                                         
                                         if comp_results and 'peer_data' in comp_results:
