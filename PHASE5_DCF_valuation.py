@@ -2178,11 +2178,12 @@ def calculate_relative_valuation(ticker, financials, shares, peer_tickers=None, 
         for attempt in range(max_retries):
             try:
                 stock = get_cached_ticker(get_ticker_with_exchange(ticker, exchange_suffix))
-                info = stock.info
+                info = stock.info if stock else None
                 # Robust price fetching - try multiple methods
-                current_price = info.get('currentPrice', 0)
-                if not current_price or current_price == 0:
-                    current_price = info.get('regularMarketPrice', 0)
+                if info:
+                    current_price = info.get('currentPrice', 0)
+                    if not current_price or current_price == 0:
+                        current_price = info.get('regularMarketPrice', 0)
                 if not current_price or current_price == 0:
                     try:
                         hist = stock.history(period='1d')
@@ -2234,7 +2235,10 @@ def calculate_relative_valuation(ticker, financials, shares, peer_tickers=None, 
                     time.sleep(random.uniform(1.0, 1.5))  # Reduced from 2-3s since caching prevents duplicates
                 
                 peer_stock = get_cached_ticker(get_ticker_with_exchange(peer, exchange_suffix))
-                peer_info = peer_stock.info
+                peer_info = peer_stock.info if peer_stock else None
+                
+                if not peer_info:
+                    continue
                 
                 peer_pe = peer_info.get('trailingPE', 0)
                 peer_pb = peer_info.get('priceToBook', 0)
@@ -2436,7 +2440,7 @@ def fetch_yahoo_financials_internal(ticker, exchange_suffix="NS"):
         cash_flow = stock.cashflow
         
         # Get company info
-        info = stock.info
+        info = stock.info if stock else None
         
         if income_stmt.empty or balance_sheet.empty:
             return None, "No financial data available"
@@ -2445,10 +2449,11 @@ def fetch_yahoo_financials_internal(ticker, exchange_suffix="NS"):
         shares = 0
         
         # Method 1: Direct from info
-        shares = info.get('sharesOutstanding', 0)
+        if info:
+            shares = info.get('sharesOutstanding', 0)
         
         # Method 2: Implied shares outstanding
-        if shares == 0 or shares is None:
+        if (shares == 0 or shares is None) and info:
             shares = info.get('impliedSharesOutstanding', 0)
         
         # Method 3: From balance sheet (Total Common Stock / Par Value)
@@ -2472,14 +2477,14 @@ def fetch_yahoo_financials_internal(ticker, exchange_suffix="NS"):
                 pass
         
         # Method 4: Calculate from market cap and price
-        if (shares == 0 or shares is None) and 'marketCap' in info and 'currentPrice' in info:
+        if (shares == 0 or shares is None) and info and 'marketCap' in info and 'currentPrice' in info:
             market_cap = info.get('marketCap', 0)
             current_price = info.get('currentPrice', 0)
             if market_cap > 0 and current_price > 0:
                 shares = market_cap / current_price
         
         # Method 5: From enterprise value and price
-        if (shares == 0 or shares is None) and 'enterpriseValue' in info and 'currentPrice' in info:
+        if (shares == 0 or shares is None) and info and 'enterpriseValue' in info and 'currentPrice' in info:
             ev = info.get('enterpriseValue', 0)
             price = info.get('currentPrice', 0)
             if ev > 0 and price > 0:
@@ -2492,7 +2497,7 @@ def fetch_yahoo_financials_internal(ticker, exchange_suffix="NS"):
         
         shares_source = "Unknown"
         if shares > 0:
-            if info.get('sharesOutstanding', 0) > 0:
+            if info and info.get('sharesOutstanding', 0) > 0:
                 shares_source = "Direct (sharesOutstanding)"
             elif info.get('impliedSharesOutstanding', 0) > 0:
                 shares_source = "Implied shares"
@@ -3685,9 +3690,13 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
         if target_ticker:
             # Listed company
             target_stock = get_cached_ticker(get_ticker_with_exchange(target_ticker, exchange_suffix))
-            target_info = target_stock.info
+            target_info = target_stock.info if target_stock else None
             target_financials_yf = target_stock.financials
             target_bs = target_stock.balance_sheet
+            
+            if not target_info:
+                st.error(f"Could not fetch data for {target_ticker}")
+                return results
             
             results['target'] = {
                 'name': target_info.get('longName', target_ticker),
@@ -3794,7 +3803,12 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                     
                     # Ticker already has suffix (.NS or .BO) from UI combination
                     comp_stock = get_cached_ticker(ticker)
-                    comp_info = comp_stock.info
+                    comp_info = comp_stock.info if comp_stock else None
+                    
+                    if not comp_info:
+                        st.warning(f"Could not fetch data for {ticker}")
+                        continue
+                    
                     comp_financials_yf = comp_stock.financials
                     comp_bs = comp_stock.balance_sheet
                     
@@ -6422,7 +6436,9 @@ def main():
                                     try:
                                         import yfinance as yf
                                         yf_ticker = yf.Ticker(ticker)
-                                        current_price = yf_ticker.info.get('currentPrice', 0) or yf_ticker.info.get('regularMarketPrice', 0)
+                                        yf_info = yf_ticker.info if yf_ticker else None
+                                        if yf_info:
+                                            current_price = yf_info.get('currentPrice', 0) or yf_info.get('regularMarketPrice', 0)
                                         if current_price > 0:
                                             st.success(f"✅ Current Price: ₹{current_price:.2f} (Yahoo Finance)")
                                     except:
@@ -6564,8 +6580,8 @@ def main():
                 
                     # Get current price
                     stock = get_cached_ticker(get_ticker_with_exchange(ticker, exchange_suffix))
-                    info = stock.info
-                    current_price = info.get('currentPrice', 0)
+                    info = stock.info if stock else None
+                    current_price = info.get('currentPrice', 0) if info else 0
                 
                     # Calculate Ke for bank valuations
                     wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate)
@@ -7255,11 +7271,12 @@ def main():
                 current_price = 0
                 try:
                     stock = get_cached_ticker(get_ticker_with_exchange(ticker, exchange_suffix))
-                    info = stock.info
+                    info = stock.info if stock else None
                     # Try multiple methods to get current price (Phase 1 approach)
-                    current_price = info.get('currentPrice', 0)
-                    if not current_price or current_price == 0:
-                        current_price = info.get('regularMarketPrice', 0)
+                    if info:
+                        current_price = info.get('currentPrice', 0)
+                        if not current_price or current_price == 0:
+                            current_price = info.get('regularMarketPrice', 0)
                     if not current_price or current_price == 0:
                         # Try getting from recent history
                         try:
