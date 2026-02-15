@@ -9870,41 +9870,96 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     # ============================================
                     if run_comp_unlisted and peer_tickers:
                         with tabs[tab_idx]:
-                            st.subheader("📊 Comparative (Relative) Valuation")
+                            st.subheader("📊 Comparative Valuation (Peer Multiples)")
                             
                             if peer_tickers and peer_tickers.strip():
-                                # Reuse comp_results calculated earlier
-                                if 'comp_results' in locals() and comp_results and 'comparables' in comp_results:
-                                    st.markdown("### 📊 Peer Company Multiples")
-                                    
-                                    peer_df = pd.DataFrame(comp_results['comparables'])
-                                    if not peer_df.empty:
-                                        st.dataframe(peer_df, use_container_width=True)
+                                with st.spinner("Fetching comparable companies data..."):
+                                    try:
+                                        comp_results_unlisted = perform_comparative_valuation(
+                                            target_ticker=None,  # Unlisted company
+                                            comp_tickers_str=peer_tickers,
+                                            target_financials=financials,
+                                            target_shares=num_shares,
+                                            exchange_suffix="NS",
+                                            projections=projections if run_dcf_unlisted else None,
+                                            use_screener_peers=False
+                                        )
                                         
-                                        st.markdown("---")
-                                        st.markdown("### 🎯 Valuation Summary")
-                                        
-                                        # Extract valuations from results['valuations']
-                                        valuations = comp_results.get('valuations', {})
-                                        
-                                        val_summary = pd.DataFrame({
-                                            'Multiple': ['P/E Ratio', 'P/B Ratio', 'EV/EBITDA'],
-                                            'Average': [
-                                                f"₹{valuations.get('pe', {}).get('fair_value_avg', 0):.2f}" if 'pe' in valuations else 'N/A',
-                                                f"₹{valuations.get('pb', {}).get('fair_value_avg', 0):.2f}" if 'pb' in valuations else 'N/A',
-                                                f"₹{valuations.get('ev_ebitda', {}).get('fair_value_avg', 0):.2f}" if 'ev_ebitda' in valuations else 'N/A'
-                                            ],
-                                            'Median': [
-                                                f"₹{valuations.get('pe', {}).get('fair_value_median', 0):.2f}" if 'pe' in valuations else 'N/A',
-                                                f"₹{valuations.get('pb', {}).get('fair_value_median', 0):.2f}" if 'pb' in valuations else 'N/A',
-                                                f"₹{valuations.get('ev_ebitda', {}).get('fair_value_median', 0):.2f}" if 'ev_ebitda' in valuations else 'N/A'
-                                            ]
-                                        })
-                                        st.dataframe(val_summary, use_container_width=True, hide_index=True)
-                                    else:
-                                        st.warning("No peer data available")
-                                else:
-                                    st.warning("Comparative valuation could not be calculated. Check peer tickers.")
+                                        if comp_results_unlisted and 'comparables' in comp_results_unlisted and len(comp_results_unlisted['comparables']) > 0:
+                                            # Show comparables table
+                                            st.markdown("### Comparable Companies")
+                                            comp_df = pd.DataFrame(comp_results_unlisted['comparables'])
+                                            if not comp_df.empty:
+                                                display_comp_df = comp_df[['ticker', 'name', 'price', 'pe', 'pb', 'ps', 'ev_ebitda', 'ev_sales']]
+                                                st.dataframe(display_comp_df.style.format({
+                                                    'price': '₹{:.2f}',
+                                                    'pe': '{:.2f}x',
+                                                    'pb': '{:.2f}x',
+                                                    'ps': '{:.2f}x',
+                                                    'ev_ebitda': '{:.2f}x',
+                                                    'ev_sales': '{:.2f}x'
+                                                }), use_container_width=True)
+                                            
+                                            # Show multiples statistics
+                                            st.markdown("### Peer Multiples Statistics")
+                                            for multiple, stats in comp_results_unlisted['multiples_stats'].items():
+                                                with st.expander(f"📊 {multiple.upper()} - Avg: {stats['average']:.2f}x, Median: {stats['median']:.2f}x"):
+                                                    st.write(f"**Range:** {stats['min']:.2f}x - {stats['max']:.2f}x")
+                                                    st.write(f"**Std Dev:** {stats['std']:.2f}x")
+                                                    st.write(f"**Peer Values:** {', '.join([f'{v:.2f}x' for v in stats['values']])}")
+                                            
+                                            # Show implied valuations
+                                            st.markdown("### Implied Fair Values")
+                                            
+                                            all_avg_values = []
+                                            all_median_values = []
+                                            
+                                            for method_key, val_data in comp_results_unlisted['valuations'].items():
+                                                st.markdown(f"#### {val_data['method']}")
+                                                
+                                                col1, col2 = st.columns(2)
+                                                
+                                                with col1:
+                                                    st.markdown("**Using Average Multiple:**")
+                                                    st.write(val_data['formula_avg'])
+                                                    st.metric("Fair Value (Avg)", f"₹{val_data['fair_value_avg']:.2f}")
+                                                    all_avg_values.append(val_data['fair_value_avg'])
+                                                
+                                                with col2:
+                                                    st.markdown("**Using Median Multiple:**")
+                                                    st.write(val_data['formula_median'])
+                                                    st.metric("Fair Value (Median)", f"₹{val_data['fair_value_median']:.2f}")
+                                                    all_median_values.append(val_data['fair_value_median'])
+                                                
+                                                st.markdown("---")
+                                            
+                                            # Summary statistics
+                                            if all_avg_values and all_median_values:
+                                                st.markdown("### 📈 Comparative Valuation Summary")
+                                                
+                                                col1, col2, col3 = st.columns(3)
+                                                
+                                                with col1:
+                                                    avg_comp = np.mean(all_avg_values)
+                                                    median_comp = np.median(all_median_values)
+                                                    st.metric("Average (All Methods)", f"₹{avg_comp:.2f}")
+                                                    st.metric("Median (All Methods)", f"₹{median_comp:.2f}")
+                                                
+                                                with col2:
+                                                    st.metric("Min Fair Value", f"₹{min(all_avg_values + all_median_values):.2f}")
+                                                    st.metric("Max Fair Value", f"₹{max(all_avg_values + all_median_values):.2f}")
+                                                
+                                                with col3:
+                                                    if run_dcf_unlisted and valuation['fair_value_per_share'] > 0:
+                                                        st.metric("DCF Fair Value", f"₹{valuation['fair_value_per_share']:.2f}")
+                                                        combined_avg = (avg_comp + valuation['fair_value_per_share']) / 2
+                                                        st.metric("DCF + Comp Avg", f"₹{combined_avg:.2f}")
+                                        else:
+                                            st.warning("Could not fetch comparable companies data or no valid comparables found")
+                                    except Exception as e:
+                                        st.error(f"Comparative valuation error: {str(e)}")
+                                        import traceback
+                                        st.error(traceback.format_exc())
                             else:
                                 st.info("No peer tickers provided. Enter peer tickers to enable comparative valuation.")
                         
