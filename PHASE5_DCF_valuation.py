@@ -9687,12 +9687,12 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 'Component': ['Cost of Equity (Ke)', 'Cost of Debt (Kd)', 'Tax Rate', 'After-Tax Kd', 
                                             'Equity Weight', 'Debt Weight', 'WACC'],
                                 'Value': [
-                                    f"{wacc_details['cost_of_equity']:.2f}%",
-                                    f"{wacc_details['cost_of_debt']:.2f}%",
+                                    f"{wacc_details['ke']:.2f}%",
+                                    f"{wacc_details['kd']:.2f}%",
                                     f"{tax_rate:.2f}%",
-                                    f"{wacc_details['after_tax_cost_of_debt']:.2f}%",
-                                    f"{wacc_details['weight_equity']*100:.2f}%",
-                                    f"{wacc_details['weight_debt']*100:.2f}%",
+                                    f"{wacc_details['kd_after_tax']:.2f}%",
+                                    f"{wacc_details['we']:.2f}%",
+                                    f"{wacc_details['wd']:.2f}%",
                                     f"{wacc_details['wacc']:.2f}%"
                                 ]
                             })
@@ -9705,11 +9705,11 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             capm_df = pd.DataFrame({
                                 'Parameter': ['Risk-Free Rate (Rf)', 'Beta (β)', 'Market Return (Rm)', 'Market Risk Premium', 'Cost of Equity (Ke)'],
                                 'Value': [
-                                    f"{manual_rf_rate:.2f}%",
+                                    f"{wacc_details['rf']:.2f}%",
                                     f"{wacc_details['beta']:.2f}",
-                                    f"{manual_rm_rate:.2f}%",
-                                    f"{manual_rm_rate - manual_rf_rate:.2f}%",
-                                    f"{wacc_details['cost_of_equity']:.2f}%"
+                                    f"{wacc_details['rm']:.2f}%",
+                                    f"{wacc_details['rm'] - wacc_details['rf']:.2f}%",
+                                    f"{wacc_details['ke']:.2f}%"
                                 ]
                             })
                             st.dataframe(capm_df, use_container_width=True, hide_index=True)
