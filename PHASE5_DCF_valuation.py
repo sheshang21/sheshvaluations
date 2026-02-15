@@ -2843,6 +2843,11 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
     - BSE (.BO) -> SENSEX (^BSESN)
     """
     try:
+        # Handle None or empty ticker
+        if not ticker or ticker is None:
+            st.warning(f"⚠️ Invalid ticker provided - using default β=1.0")
+            return 1.0
+        
         # Ensure ticker has exchange suffix
         if '.NS' not in ticker and '.BO' not in ticker:
             # No suffix, assume NSE
