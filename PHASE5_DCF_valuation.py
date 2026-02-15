@@ -9875,31 +9875,33 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                                 st.markdown("---")
                                                 st.markdown("### 🎯 Valuation Summary")
                                                 
+                                                # Extract valuations from results['valuations']
+                                                valuations = comp_results.get('valuations', {})
+                                                
                                                 # Update fair values with comp data
-                                                if 'pe_valuation' in comp_results and 'avg' in comp_results['pe_valuation']:
-                                                    comp_avg = comp_results['pe_valuation']['avg']
-                                                if 'pe_valuation' in comp_results and 'median' in comp_results['pe_valuation']:
-                                                    comp_median = comp_results['pe_valuation']['median']
+                                                if 'pe' in valuations:
+                                                    comp_avg = valuations['pe'].get('fair_value_avg', 0)
+                                                    comp_median = valuations['pe'].get('fair_value_median', 0)
                                                 
                                                 val_summary = pd.DataFrame({
                                                     'Multiple': ['P/E Ratio', 'P/B Ratio', 'EV/EBITDA'],
                                                     'Average': [
-                                                        f"₹{comp_results.get('pe_valuation', {}).get('avg', 0):.2f}" if 'pe_valuation' in comp_results else 'N/A',
-                                                        f"₹{comp_results.get('pb_valuation', {}).get('avg', 0):.2f}" if 'pb_valuation' in comp_results else 'N/A',
-                                                        f"₹{comp_results.get('ev_ebitda_valuation', {}).get('avg', 0):.2f}" if 'ev_ebitda_valuation' in comp_results else 'N/A'
+                                                        f"₹{valuations.get('pe', {}).get('fair_value_avg', 0):.2f}" if 'pe' in valuations else 'N/A',
+                                                        f"₹{valuations.get('pb', {}).get('fair_value_avg', 0):.2f}" if 'pb' in valuations else 'N/A',
+                                                        f"₹{valuations.get('ev_ebitda', {}).get('fair_value_avg', 0):.2f}" if 'ev_ebitda' in valuations else 'N/A'
                                                     ],
                                                     'Median': [
-                                                        f"₹{comp_results.get('pe_valuation', {}).get('median', 0):.2f}" if 'pe_valuation' in comp_results else 'N/A',
-                                                        f"₹{comp_results.get('pb_valuation', {}).get('median', 0):.2f}" if 'pb_valuation' in comp_results else 'N/A',
-                                                        f"₹{comp_results.get('ev_ebitda_valuation', {}).get('median', 0):.2f}" if 'ev_ebitda_valuation' in comp_results else 'N/A'
+                                                        f"₹{valuations.get('pe', {}).get('fair_value_median', 0):.2f}" if 'pe' in valuations else 'N/A',
+                                                        f"₹{valuations.get('pb', {}).get('fair_value_median', 0):.2f}" if 'pb' in valuations else 'N/A',
+                                                        f"₹{valuations.get('ev_ebitda', {}).get('fair_value_median', 0):.2f}" if 'ev_ebitda' in valuations else 'N/A'
                                                     ]
                                                 })
                                                 st.dataframe(val_summary, use_container_width=True, hide_index=True)
                                                 
                                                 # Update top metrics
-                                                if comp_avg:
+                                                if comp_avg and comp_avg > 0:
                                                     fv_cols[len(fair_values_dict)].metric("Comp (Avg)", f"₹{comp_avg:.2f}")
-                                                if comp_median:
+                                                if comp_median and comp_median > 0:
                                                     fv_cols[len(fair_values_dict) + 1].metric("Comp (Median)", f"₹{comp_median:.2f}")
                                         else:
                                             st.warning("Could not fetch peer company data")
