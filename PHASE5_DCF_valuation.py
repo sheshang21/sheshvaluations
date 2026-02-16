@@ -9094,6 +9094,18 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             tax_rate = st.number_input("Tax Rate (%):", min_value=0.0, max_value=100.0, value=25.0, step=0.5)
             terminal_growth = st.number_input("Terminal Growth Rate (%):", min_value=0.0, max_value=10.0, value=4.0, step=0.5)
             
+            # Historical years input
+            st.markdown("**⏱️ Historical Data Years**")
+            historical_years_unlisted = st.number_input(
+                "Historical Years to Use",
+                min_value=2,
+                max_value=10,
+                value=3,
+                step=1,
+                key='unlisted_historical_years',
+                help="Number of historical years to use for calculations. Excel must contain at least this many years of data."
+            )
+            
             # Risk-free rate manual input
             st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
             
@@ -9343,13 +9355,21 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         st.stop()
                 
                     # Detect year columns
-                    year_cols = detect_year_columns(df_bs)
+                    year_cols_all = detect_year_columns(df_bs)
                 
-                    if len(year_cols) < 3:
-                        st.error("Need at least 3 years of historical data")
+                    if len(year_cols_all) < 2:
+                        st.error("Need at least 2 years of historical data in Excel file")
                         st.stop()
                 
-                    st.success(f"✅ Loaded {len(year_cols)} years of data")
+                    st.success(f"✅ Excel contains {len(year_cols_all)} years of data")
+                    
+                    # Limit to user-selected historical years
+                    if historical_years_unlisted > len(year_cols_all):
+                        st.warning(f"⚠️ Requested {historical_years_unlisted} years but Excel has only {len(year_cols_all)} years. Using all available data.")
+                        year_cols = year_cols_all
+                    else:
+                        year_cols = year_cols_all[-historical_years_unlisted:]
+                        st.info(f"📊 Using {len(year_cols)} most recent years as selected")
                 
                     # Extract financials
                     financials = extract_financials_unlisted(df_bs, df_pl, year_cols)
@@ -10526,6 +10546,22 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     help="0 = Use same as DCF projection years (5). Number of years to project."
                 )
         
+        # Manual Shares Override Section
+        with st.expander("📊 Manual Shares Outstanding Override (Optional)"):
+            st.info("💡 **Use this to manually specify shares if auto-detection fails or for newly listed companies**")
+            manual_shares_override_screener = st.number_input(
+                "Manual Shares Outstanding (Absolute Number)",
+                min_value=0,
+                value=0,
+                step=1000000,
+                format="%d",
+                key='manual_shares_screener',
+                help="⚠️ Override auto-detected shares. Enter absolute number (e.g., 50000000 for 5 crore shares). Leave at 0 to use auto-detected value."
+            )
+            if manual_shares_override_screener > 0:
+                st.success(f"✅ Manual override active: **{manual_shares_override_screener:,}** shares ({manual_shares_override_screener/10000000:.2f} Crore)")
+                st.warning("⚠️ This will override shares detected from Excel file")
+        
         # Run valuation button
         if excel_file_screener and company_name_screener:
             # Stock Price Comparison Feature Toggle - compact, before run button
@@ -10597,33 +10633,41 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         year_cols_screener = year_cols_screener_all[-historical_years_screener:]
                         st.info(f"📊 Using {len(year_cols_screener)} most recent years as selected: {', '.join([y.replace('_', '') for y in year_cols_screener])}")
                     
-                    # Try to get shares from Excel
-                    shares_from_excel = get_screener_shares_outstanding(df_bs_screener, year_cols_screener[-1])
-                    if shares_from_excel > 0:
-                        num_shares_screener = shares_from_excel
-                        st.success(f"✅ Auto-detected {num_shares_screener:,} shares from Excel")
+                    # Try to get shares from Excel or use manual override
+                    if manual_shares_override_screener > 0:
+                        # User provided manual override - use it
+                        num_shares_screener = manual_shares_override_screener
+                        st.success(f"✅ Using manual override: {num_shares_screener:,} shares ({num_shares_screener/10000000:.2f} Crore)")
                     else:
-                        # Prompt user to enter shares manually
-                        st.warning("⚠️ Could not auto-detect shares outstanding from Excel")
-                        num_shares_screener = st.number_input(
-                            "Please enter Number of Shares Outstanding:",
-                            min_value=1,
-                            value=100000,
-                            step=1000,
-                            key='screener_shares_manual',
-                            help="Enter the total number of shares outstanding for the company"
-                        )
-                        if num_shares_screener == 100000:
-                            st.error("❌ Please enter the actual number of shares outstanding (default 100,000 is just a placeholder)")
-                            st.stop()
+                        # Try auto-detection from Excel
+                        shares_from_excel = get_screener_shares_outstanding(df_bs_screener, year_cols_screener[-1])
+                        if shares_from_excel > 0:
+                            num_shares_screener = shares_from_excel
+                            st.success(f"✅ Auto-detected {num_shares_screener:,} shares from Excel")
+                        else:
+                            # Prompt user to enter shares manually
+                            st.warning("⚠️ Could not auto-detect shares outstanding from Excel")
+                            num_shares_screener = st.number_input(
+                                "Please enter Number of Shares Outstanding:",
+                                min_value=1,
+                                value=100000,
+                                step=1000,
+                                key='screener_shares_manual_fallback',
+                                help="Enter the total number of shares outstanding for the company"
+                            )
+                            if num_shares_screener == 100000:
+                                st.error("❌ Please enter the actual number of shares outstanding (default 100,000 is just a placeholder)")
+                                st.stop()
                     
                     # Extract financials using Screener extraction
                     financials_screener = extract_screener_financials(df_bs_screener, df_pl_screener, year_cols_screener)
                     
-                    # Auto-fill shares if available from Excel
-                    if financials_screener.get('num_shares') and financials_screener['num_shares'] > 0:
-                        num_shares_screener = financials_screener['num_shares']
-                        st.success(f"✅ Confirmed shares from Excel: {num_shares_screener:,} shares")
+                    # Only use shares from financials if manual override is NOT active
+                    if manual_shares_override_screener == 0:
+                        # Auto-fill shares if available from Excel extraction
+                        if financials_screener.get('num_shares') and financials_screener['num_shares'] > 0:
+                            num_shares_screener = financials_screener['num_shares']
+                            st.info(f"📋 Confirmed shares from Excel extraction: {num_shares_screener:,} shares")
                     
                     # Add num_shares to financials dict
                     financials_screener['num_shares'] = num_shares_screener
