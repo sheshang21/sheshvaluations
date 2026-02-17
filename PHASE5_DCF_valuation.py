@@ -10656,8 +10656,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         if ticker_symbol_screener and ticker_symbol_screener.strip():
                             with st.spinner("Fetching shares outstanding from Yahoo Finance..."):
                                 try:
+                                    import yfinance as _yf
                                     full_ticker_yf = f"{ticker_symbol_screener.strip().upper()}.{exchange_screener}"
-                                    yf_ticker = yf.Ticker(full_ticker_yf)
+                                    yf_ticker = _yf.Ticker(full_ticker_yf)
                                     yf_info = yf_ticker.info
                                     yf_shares = yf_info.get('sharesOutstanding', 0) or yf_info.get('impliedSharesOutstanding', 0)
                                     if yf_shares and yf_shares > 0:
