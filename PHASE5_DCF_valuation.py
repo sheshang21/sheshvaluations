@@ -10178,6 +10178,28 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     help="NS=NSE, BO=BSE"
                 )
             
+            # Shares Outstanding Source
+            st.markdown("**📊 Shares Outstanding**")
+            use_yahoo_shares_screener = st.checkbox(
+                "Fetch shares outstanding from Yahoo Finance (use if Screener data is inaccurate)",
+                value=False,
+                key='use_yahoo_shares_screener',
+                help="Requires a valid ticker above. If unchecked, shares are read from the uploaded Screener Excel."
+            )
+            manual_shares_override_screener = st.number_input(
+                "Manual Override — leave at 0 to use auto",
+                min_value=0,
+                value=0,
+                step=1000000,
+                format="%d",
+                key='manual_shares_screener',
+                help="Takes priority over both Excel and Yahoo Finance. Enter absolute number (e.g., 50000000 for 5 crore)."
+            )
+            if manual_shares_override_screener > 0:
+                st.success(f"✅ Manual override: **{manual_shares_override_screener:,}** shares ({manual_shares_override_screener/10000000:.2f} Crore)")
+
+            st.markdown("---")
+
             # Integrated Auto Download or Manual Upload Section
             if AUTO_DOWNLOAD_AVAILABLE:
                 use_auto_dl, excel_file_screener = integrate_with_existing_upload_section(
@@ -10545,29 +10567,6 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     key='screener_rim_proj_years',
                     help="0 = Use same as DCF projection years (5). Number of years to project."
                 )
-        
-        # Shares Outstanding Source Section
-        with st.expander("📊 Shares Outstanding Override (Optional)"):
-            st.info("💡 **Screener.in sometimes has inaccurate shares outstanding. Use the options below to override.**")
-            
-            use_yahoo_shares_screener = st.checkbox(
-                "📈 Fetch shares outstanding from Yahoo Finance instead of Screener Excel",
-                value=False,
-                key='use_yahoo_shares_screener',
-                help="Check this if Screener's shares outstanding data looks wrong. Requires a valid ticker above."
-            )
-            
-            manual_shares_override_screener = st.number_input(
-                "Manual Shares Outstanding (overrides all — leave at 0 to use auto)",
-                min_value=0,
-                value=0,
-                step=1000000,
-                format="%d",
-                key='manual_shares_screener',
-                help="Enter absolute number (e.g., 50000000 for 5 crore shares). Takes priority over both Excel and Yahoo Finance."
-            )
-            if manual_shares_override_screener > 0:
-                st.success(f"✅ Manual override active: **{manual_shares_override_screener:,}** shares ({manual_shares_override_screener/10000000:.2f} Crore)")
         
         # Run valuation button
         if excel_file_screener and company_name_screener:
