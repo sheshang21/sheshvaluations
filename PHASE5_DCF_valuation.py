@@ -10297,7 +10297,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             with col_years1:
                 historical_years_screener = st.number_input(
                     "📊 Historical Years to Use",
-                    min_value=3,
+                    min_value=2,
                     max_value=15,
                     value=5,
                     step=1,
