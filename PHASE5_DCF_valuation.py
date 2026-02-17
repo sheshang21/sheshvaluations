@@ -10546,21 +10546,28 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     help="0 = Use same as DCF projection years (5). Number of years to project."
                 )
         
-        # Manual Shares Override Section
-        with st.expander("📊 Manual Shares Outstanding Override (Optional)"):
-            st.info("💡 **Use this to manually specify shares if auto-detection fails or for newly listed companies**")
+        # Shares Outstanding Source Section
+        with st.expander("📊 Shares Outstanding Override (Optional)"):
+            st.info("💡 **Screener.in sometimes has inaccurate shares outstanding. Use the options below to override.**")
+            
+            use_yahoo_shares_screener = st.checkbox(
+                "📈 Fetch shares outstanding from Yahoo Finance instead of Screener Excel",
+                value=False,
+                key='use_yahoo_shares_screener',
+                help="Check this if Screener's shares outstanding data looks wrong. Requires a valid ticker above."
+            )
+            
             manual_shares_override_screener = st.number_input(
-                "Manual Shares Outstanding (Absolute Number)",
+                "Manual Shares Outstanding (overrides all — leave at 0 to use auto)",
                 min_value=0,
                 value=0,
                 step=1000000,
                 format="%d",
                 key='manual_shares_screener',
-                help="⚠️ Override auto-detected shares. Enter absolute number (e.g., 50000000 for 5 crore shares). Leave at 0 to use auto-detected value."
+                help="Enter absolute number (e.g., 50000000 for 5 crore shares). Takes priority over both Excel and Yahoo Finance."
             )
             if manual_shares_override_screener > 0:
                 st.success(f"✅ Manual override active: **{manual_shares_override_screener:,}** shares ({manual_shares_override_screener/10000000:.2f} Crore)")
-                st.warning("⚠️ This will override shares detected from Excel file")
         
         # Run valuation button
         if excel_file_screener and company_name_screener:
@@ -10633,44 +10640,92 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         year_cols_screener = year_cols_screener_all[-historical_years_screener:]
                         st.info(f"📊 Using {len(year_cols_screener)} most recent years as selected: {', '.join([y.replace('_', '') for y in year_cols_screener])}")
                     
-                    # Try to get shares from Excel or use manual override
+                    # ================================
+                    # RESOLVE SHARES OUTSTANDING
+                    # ================================
+                    num_shares_screener = 0
+                    shares_final_source = "Unknown"
+
                     if manual_shares_override_screener > 0:
-                        # User provided manual override - use it
+                        # Manual entry always takes top priority
                         num_shares_screener = manual_shares_override_screener
+                        shares_final_source = "Manual Override (User Input)"
                         st.success(f"✅ Using manual override: {num_shares_screener:,} shares ({num_shares_screener/10000000:.2f} Crore)")
+
+                    elif use_yahoo_shares_screener:
+                        # Fetch shares from Yahoo Finance
+                        if ticker_symbol_screener and ticker_symbol_screener.strip():
+                            with st.spinner("Fetching shares outstanding from Yahoo Finance..."):
+                                try:
+                                    full_ticker_yf = f"{ticker_symbol_screener.strip().upper()}.{exchange_screener}"
+                                    yf_ticker = yf.Ticker(full_ticker_yf)
+                                    yf_info = yf_ticker.info
+                                    yf_shares = yf_info.get('sharesOutstanding', 0) or yf_info.get('impliedSharesOutstanding', 0)
+                                    if yf_shares and yf_shares > 0:
+                                        num_shares_screener = int(yf_shares)
+                                        shares_final_source = "Yahoo Finance (sharesOutstanding)"
+                                        st.success(f"✅ Fetched from Yahoo Finance: {num_shares_screener:,} shares ({num_shares_screener/10000000:.2f} Crore)")
+                                    else:
+                                        st.warning("⚠️ Yahoo Finance returned 0 shares. Falling back to Screener Excel.")
+                                        shares_from_excel = get_screener_shares_outstanding(df_bs_screener, year_cols_screener[-1])
+                                        if shares_from_excel > 0:
+                                            num_shares_screener = shares_from_excel
+                                            shares_final_source = "Screener Excel (Yahoo Finance fallback)"
+                                            st.info(f"📋 Fallback: {num_shares_screener:,} shares from Excel")
+                                except Exception as e:
+                                    st.warning(f"⚠️ Yahoo Finance fetch failed: {str(e)[:120]}. Falling back to Screener Excel.")
+                                    shares_from_excel = get_screener_shares_outstanding(df_bs_screener, year_cols_screener[-1])
+                                    if shares_from_excel > 0:
+                                        num_shares_screener = shares_from_excel
+                                        shares_final_source = "Screener Excel (Yahoo Finance fallback)"
+                                        st.info(f"📋 Fallback: {num_shares_screener:,} shares from Excel")
+                        else:
+                            st.warning("⚠️ No ticker provided for Yahoo Finance fetch. Falling back to Screener Excel.")
+                            shares_from_excel = get_screener_shares_outstanding(df_bs_screener, year_cols_screener[-1])
+                            if shares_from_excel > 0:
+                                num_shares_screener = shares_from_excel
+                                shares_final_source = "Screener Excel (no ticker for Yahoo Finance)"
+                                st.info(f"📋 Fallback: {num_shares_screener:,} shares from Excel")
+
                     else:
-                        # Try auto-detection from Excel
+                        # Default: use Screener Excel
                         shares_from_excel = get_screener_shares_outstanding(df_bs_screener, year_cols_screener[-1])
                         if shares_from_excel > 0:
                             num_shares_screener = shares_from_excel
+                            shares_final_source = "Screener Excel"
                             st.success(f"✅ Auto-detected {num_shares_screener:,} shares from Excel")
                         else:
-                            # Prompt user to enter shares manually
                             st.warning("⚠️ Could not auto-detect shares outstanding from Excel")
-                            num_shares_screener = st.number_input(
-                                "Please enter Number of Shares Outstanding:",
-                                min_value=1,
-                                value=100000,
-                                step=1000,
-                                key='screener_shares_manual_fallback',
-                                help="Enter the total number of shares outstanding for the company"
-                            )
-                            if num_shares_screener == 100000:
-                                st.error("❌ Please enter the actual number of shares outstanding (default 100,000 is just a placeholder)")
-                                st.stop()
+
+                    # If still 0 after all sources, prompt manual entry as last resort
+                    if num_shares_screener == 0:
+                        st.error("❌ Could not determine shares outstanding from any source.")
+                        num_shares_screener = st.number_input(
+                            "Please enter Number of Shares Outstanding:",
+                            min_value=1,
+                            value=100000,
+                            step=1000,
+                            key='screener_shares_manual_fallback',
+                            help="Enter the total number of shares outstanding for the company"
+                        )
+                        if num_shares_screener == 100000:
+                            st.error("❌ Please enter the actual number of shares outstanding (default 100,000 is just a placeholder)")
+                            st.stop()
+                        shares_final_source = "Manual Fallback (User Input)"
                     
                     # Extract financials using Screener extraction
                     financials_screener = extract_screener_financials(df_bs_screener, df_pl_screener, year_cols_screener)
                     
-                    # Only use shares from financials if manual override is NOT active
-                    if manual_shares_override_screener == 0:
-                        # Auto-fill shares if available from Excel extraction
+                    # Confirm/update from financials extraction if we're using Screener Excel and haven't got a better source
+                    if shares_final_source in ("Unknown", "Screener Excel") and manual_shares_override_screener == 0 and not use_yahoo_shares_screener:
                         if financials_screener.get('num_shares') and financials_screener['num_shares'] > 0:
                             num_shares_screener = financials_screener['num_shares']
+                            shares_final_source = "Screener Excel (financials extraction)"
                             st.info(f"📋 Confirmed shares from Excel extraction: {num_shares_screener:,} shares")
-                    
-                    # Add num_shares to financials dict
+
+                    # Add num_shares and source to financials dict
                     financials_screener['num_shares'] = num_shares_screener
+                    st.caption(f"ℹ️ Shares source used: **{shares_final_source}**")
                     
                     # Display financial summary
                     display_screener_financial_summary(financials_screener)
