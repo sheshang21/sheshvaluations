@@ -235,6 +235,89 @@ Download the Excel file manually from screener.in and upload it in the app.
 
 
 # ---------------------------------------------------------------------------
+# Yahoo Finance proxy support
+# ---------------------------------------------------------------------------
+def get_yf_ticker(symbol: str, proxy_url: str | None = None):
+    """
+    Returns a yfinance Ticker object that routes all requests through a proxy.
+
+    yfinance internally uses requests, and accepts a proxy dict on most
+    data-fetching calls. This wrapper:
+      - Reads proxy from st.secrets if not explicitly provided
+      - Patches the underlying requests session so ALL yfinance calls
+        (info, financials, balance_sheet, cashflow, history) go through the proxy
+      - Falls back to a direct connection if no proxy is configured
+
+    Args:
+        symbol:    Ticker symbol e.g. "RELIANCE.NS"
+        proxy_url: Optional proxy URL. If None, reads from st.secrets["proxy"]["url"].
+
+    Returns:
+        yfinance.Ticker object (proxy-patched if proxy is configured)
+
+    Usage:
+        from proxy_fetcher import get_yf_ticker
+        ticker = get_yf_ticker("RELIANCE.NS")
+        info = ticker.info
+        financials = ticker.financials
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        raise ImportError("yfinance is not installed. Run: pip install yfinance")
+
+    resolved_proxy = proxy_url or _get_proxy_from_secrets()
+    ticker = yf.Ticker(symbol)
+
+    if resolved_proxy:
+        # yfinance exposes a requests.Session on ticker._session (yfinance >= 0.2)
+        # Patch it so all HTTP calls go through the proxy
+        try:
+            session = get_session(resolved_proxy)
+            ticker._session = session
+        except Exception:
+            # If patching fails, fall back to default (direct) behaviour
+            pass
+
+    return ticker
+
+
+def yf_download(
+    tickers,
+    proxy_url: str | None = None,
+    **kwargs
+):
+    """
+    Proxy-aware wrapper around yf.download().
+
+    Args:
+        tickers:   Ticker string or list of tickers.
+        proxy_url: Optional proxy URL. Reads from st.secrets if not provided.
+        **kwargs:  All other yf.download() kwargs (start, end, period, etc.)
+
+    Returns:
+        pandas DataFrame from yf.download()
+
+    Usage:
+        from proxy_fetcher import yf_download
+        df = yf_download("RELIANCE.NS", start="2020-01-01", end="2024-01-01")
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        raise ImportError("yfinance is not installed. Run: pip install yfinance")
+
+    resolved_proxy = proxy_url or _get_proxy_from_secrets()
+
+    if resolved_proxy:
+        # yf.download accepts a proxy dict directly
+        proxy_dict = {"https": resolved_proxy, "http": resolved_proxy}
+        return yf.download(tickers, proxy=proxy_dict, **kwargs)
+    else:
+        return yf.download(tickers, **kwargs)
+
+
+# ---------------------------------------------------------------------------
 # Convenience: fetch multiple URLs and return first successful response
 # ---------------------------------------------------------------------------
 def fetch_first_successful(

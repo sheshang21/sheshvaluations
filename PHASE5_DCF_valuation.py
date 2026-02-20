@@ -15,7 +15,13 @@ from plotly.subplots import make_subplots
 
 # Proxy / IP-bypass utility for Streamlit Cloud
 try:
-    from proxy_fetcher import fetch_url as proxy_fetch_url, fetch_first_successful, get_session as proxy_get_session
+    from proxy_fetcher import (
+        fetch_url as proxy_fetch_url,
+        fetch_first_successful,
+        get_session as proxy_get_session,
+        get_yf_ticker as proxy_get_yf_ticker,
+        yf_download as proxy_yf_download,
+    )
     PROXY_FETCHER_AVAILABLE = True
 except ImportError:
     PROXY_FETCHER_AVAILABLE = False
@@ -665,7 +671,11 @@ class CachedTickerData:
         """Lazy load ticker data on first access"""
         if not self._loaded:
             try:
-                self._ticker_obj = yf.Ticker(self.symbol)
+                # Use proxy-aware ticker if proxy_fetcher is available
+                if PROXY_FETCHER_AVAILABLE:
+                    self._ticker_obj = proxy_get_yf_ticker(self.symbol)
+                else:
+                    self._ticker_obj = yf.Ticker(self.symbol)
                 # Fetch all data at once to minimize API calls
                 self._info = self._ticker_obj.info
                 self._financials = self._ticker_obj.financials
@@ -729,7 +739,10 @@ class CachedTickerData:
         
         # Fetch new history
         if self._ticker_obj is None:
-            self._ticker_obj = yf.Ticker(self.symbol)
+            if PROXY_FETCHER_AVAILABLE:
+                self._ticker_obj = proxy_get_yf_ticker(self.symbol)
+            else:
+                self._ticker_obj = yf.Ticker(self.symbol)
         
         hist_data = self._ticker_obj.history(*args, **kwargs)
         
@@ -2847,8 +2860,9 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         start_date = end_date - timedelta(days=period_years*365)
         
         # Download stock data - ticker now has suffix
-        stock = yf.download(ticker, start=start_date, end=end_date, progress=False)
-        market = yf.download(market_ticker, start=start_date, end=end_date, progress=False)
+        _dl = proxy_yf_download if PROXY_FETCHER_AVAILABLE else yf.download
+        stock = _dl(ticker, start=start_date, end=end_date, progress=False)
+        market = _dl(market_ticker, start=start_date, end=end_date, progress=False)
         
         if stock.empty or market.empty:
             st.warning(f"⚠️ No data for {ticker} - using default β=1.0")
@@ -2914,14 +2928,15 @@ def get_risk_free_rate(custom_ticker=None):
         debug.append(f"📅 **Fetching data** from {start_date.date()} to {end_date.date()}")
         
         # Try to get data from Yahoo Finance
-        ticker_obj = yf.Ticker(ticker)
+        ticker_obj = proxy_get_yf_ticker(ticker) if PROXY_FETCHER_AVAILABLE else yf.Ticker(ticker)
         gsec_data = ticker_obj.history(period='max')
         
         if len(gsec_data) < 2:
             gsec_data = ticker_obj.history(start=start_date, end=end_date)
         
         if len(gsec_data) < 2:
-            gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            _dl = proxy_yf_download if PROXY_FETCHER_AVAILABLE else yf.download
+            gsec_data = _dl(ticker, start=start_date, end=end_date, progress=False)
             if isinstance(gsec_data.columns, pd.MultiIndex):
                 gsec_data.columns = gsec_data.columns.get_level_values(0)
         
@@ -3046,7 +3061,7 @@ def get_market_return(custom_ticker=None):
         debug.append(f"📅 Requesting maximum available historical data")
         
         # Try to get ALL available data using period='max'
-        ticker_obj = yf.Ticker(ticker)
+        ticker_obj = proxy_get_yf_ticker(ticker) if PROXY_FETCHER_AVAILABLE else yf.Ticker(ticker)
         market_data = ticker_obj.history(period='max')
         
         if len(market_data) < 2:
@@ -3055,7 +3070,8 @@ def get_market_return(custom_ticker=None):
             market_data = ticker_obj.history(start=start_date, end=end_date)
         
         if len(market_data) < 2:
-            market_data = yf.download(ticker, period='max', progress=False)
+            _dl = proxy_yf_download if PROXY_FETCHER_AVAILABLE else yf.download
+            market_data = _dl(ticker, period='max', progress=False)
             if isinstance(market_data.columns, pd.MultiIndex):
                 market_data.columns = market_data.columns.get_level_values(0)
         
@@ -6411,7 +6427,7 @@ def main():
                                     st.info("💡 Fetching current price from Yahoo Finance...")
                                     try:
                                         import yfinance as yf
-                                        yf_ticker = yf.Ticker(ticker)
+                                        yf_ticker = proxy_get_yf_ticker(ticker) if PROXY_FETCHER_AVAILABLE else yf.Ticker(ticker)
                                         yf_info = yf_ticker.info if yf_ticker else None
                                         if yf_info:
                                             current_price = yf_info.get('currentPrice', 0) or yf_info.get('regularMarketPrice', 0)
@@ -10634,7 +10650,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 try:
                                     import yfinance as _yf
                                     full_ticker_yf = f"{ticker_symbol_screener.strip().upper()}.{exchange_screener}"
-                                    yf_ticker = _yf.Ticker(full_ticker_yf)
+                                    yf_ticker = proxy_get_yf_ticker(full_ticker_yf) if PROXY_FETCHER_AVAILABLE else _yf.Ticker(full_ticker_yf)
                                     yf_info = yf_ticker.info
                                     yf_shares = yf_info.get('sharesOutstanding', 0) or yf_info.get('impliedSharesOutstanding', 0)
                                     if yf_shares and yf_shares > 0:
