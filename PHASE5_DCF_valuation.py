@@ -13,19 +13,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
-# Proxy / IP-bypass utility for Streamlit Cloud
-try:
-    from proxy_fetcher import (
-        fetch_url as proxy_fetch_url,
-        fetch_first_successful,
-        get_session as proxy_get_session,
-        get_yf_ticker as proxy_get_yf_ticker,
-        yf_download as proxy_yf_download,
-    )
-    PROXY_FETCHER_AVAILABLE = True
-except ImportError:
-    PROXY_FETCHER_AVAILABLE = False
-
 # Stock Price Comparison Module
 try:
     from stock_price_comparison import (
@@ -83,76 +70,107 @@ except ImportError as e:
             from bs4 import BeautifulSoup
             import requests
             import streamlit as st
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            import os
             
-            # ---------------------------------------------------------------
-            # Use proxy_fetcher for robust, proxy-aware fetching
-            # ---------------------------------------------------------------
-            urls_to_try = [
-                f"https://www.screener.in/company/{symbol}/consolidated/",
-                f"https://www.screener.in/company/{symbol}/"
-            ]
-
+            # Disable proxy that may be blocking screener.in
+            os.environ.pop('HTTP_PROXY', None)
+            os.environ.pop('HTTPS_PROXY', None)
+            os.environ.pop('http_proxy', None)
+            os.environ.pop('https_proxy', None)
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Connection': 'keep-alive'
+            }
+            
+            # Set up session with retries
+            session = requests.Session()
+            session.trust_env = False  # Bypass proxy blocking screener.in
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["HEAD", "GET", "OPTIONS"]
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            
+            urls_to_try = [f"https://www.screener.in/company/{symbol}/consolidated/", f"https://www.screener.in/company/{symbol}/"]
+            
             soup = None
-
-            if PROXY_FETCHER_AVAILABLE:
-                # proxy_fetcher handles proxy secrets, SSL fallback, retries,
-                # delays, and Streamlit status messages automatically
-                resp = fetch_first_successful(urls_to_try, show_status=True)
-                if resp is not None:
-                    soup = BeautifulSoup(resp.content, 'lxml')
-            else:
-                # Fallback: manual session (no proxy support)
-                import os as _os
-                for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
-                    _os.environ.pop(var, None)
-
-                _headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Connection': 'keep-alive',
-                }
-                from requests.adapters import HTTPAdapter
-                from urllib3.util.retry import Retry
-                _session = requests.Session()
-                _session.trust_env = False
-                _retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504],
-                               allowed_methods=["HEAD", "GET", "OPTIONS"])
-                _adapter = HTTPAdapter(max_retries=_retry)
-                _session.mount("https://", _adapter)
-                _session.mount("http://", _adapter)
-
-                for url in urls_to_try:
+            connection_error = False
+            last_error = None
+            
+            for url in urls_to_try:
+                try:
+                    _time.sleep(_random.uniform(1.5, 3.0))
+                    st.info(f"🔍 Attempting to fetch from: {url}")
+                    
+                    # Try with SSL verification first
                     try:
-                        _time.sleep(_random.uniform(1.5, 3.0))
-                        st.info(f"🔍 Attempting to fetch from: {url}")
-                        try:
-                            _resp = _session.get(url, headers=_headers, timeout=30, verify=True)
-                        except requests.exceptions.SSLError:
-                            st.warning("⚠️ SSL verification failed, retrying without verification...")
-                            _resp = _session.get(url, headers=_headers, timeout=30, verify=False)
-                        if _resp.status_code == 200:
-                            soup = BeautifulSoup(_resp.content, 'lxml')
-                            st.success("✅ Successfully connected to Screener.in")
-                            break
-                        else:
-                            st.warning(f"⚠️ Received status code {_resp.status_code}")
-                    except requests.exceptions.ConnectionError as e:
-                        st.error(f"❌ CONNECTION ERROR: Cannot reach www.screener.in")
-                        if "Connection refused" in str(e) or "Errno 111" in str(e):
-                            st.error("🔴 **STREAMLIT CLOUD NETWORK RESTRICTION DETECTED**")
-                            st.info("💡 Add `proxy_fetcher.py` to your repo and set `[proxy] url` in Streamlit Secrets to bypass this.")
-                        return None
-                    except requests.exceptions.Timeout:
-                        st.warning(f"⚠️ Timeout accessing {url}, trying next...")
-                        continue
-                    except Exception as e:
-                        st.warning(f"⚠️ Error: {type(e).__name__}: {e}")
-                        continue
-
+                        resp = session.get(url, headers=headers, timeout=30, verify=True)
+                    except requests.exceptions.SSLError:
+                        st.warning("⚠️ SSL verification failed, retrying without verification...")
+                        resp = session.get(url, headers=headers, timeout=30, verify=False)
+                    
+                    if resp.status_code == 200:
+                        soup = BeautifulSoup(resp.content, 'lxml')
+                        st.success(f"✅ Successfully connected to Screener.in")
+                        break
+                    else:
+                        st.warning(f"⚠️ Received status code {resp.status_code}, trying next URL...")
+                        
+                except requests.exceptions.ConnectionError as e:
+                    connection_error = True
+                    last_error = str(e)
+                    st.error(f"❌ CONNECTION ERROR: Cannot reach www.screener.in")
+                    
+                    # Check if it's Streamlit Cloud specific issue
+                    if "Connection refused" in str(e) or "Errno 111" in str(e):
+                        st.error("🔴 **STREAMLIT CLOUD NETWORK RESTRICTION DETECTED**")
+                        st.markdown("---")
+                        st.markdown("### ✅ Recommended Solutions:")
+                        st.markdown("""
+                        **Option 1: Use Screener Excel Mode (Recommended)**
+                        1. Visit [screener.in/company/{}/consolidated/](https://www.screener.in/company/{}/consolidated/)
+                        2. Click the **Export** button to download Excel file
+                        3. Return to this app and select **"Screener Excel Mode"**
+                        4. Upload the downloaded Excel file
+                        
+                        **Option 2: Use Yahoo Finance Mode**
+                        - For listed companies with NSE/BSE tickers
+                        - Select "Listed Company (Yahoo Finance)" mode
+                        
+                        **Option 3: Deploy Elsewhere**
+                        - Deploy on Heroku, Railway, or your own server
+                        - These platforms typically have fewer network restrictions
+                        
+                        **Option 4: Upgrade Streamlit Cloud**
+                        - Streamlit Cloud Teams/Enterprise may have better network access
+                        """.format(symbol, symbol))
+                        st.markdown("---")
+                    return None
+                    
+                except requests.exceptions.Timeout:
+                    st.warning(f"⚠️ Timeout accessing {url} (30s), trying next URL...")
+                    continue
+                    
+                except Exception as e:
+                    st.warning(f"⚠️ Error accessing {url}: {type(e).__name__}: {str(e)}")
+                    last_error = str(e)
+                    continue
+            
             if soup is None:
-                st.error(f"❌ Could not access Screener.in page for {symbol}")
-                st.info("💡 Try using **Screener Excel Mode** — upload a manually downloaded file from screener.in")
+                if not connection_error:
+                    st.error(f"❌ Could not access Screener.in page for {symbol}")
+                    if last_error:
+                        st.error(f"Last error: {last_error}")
+                    st.info("💡 Try using **Screener Excel Mode** instead - upload a manually downloaded file from screener.in")
                 return None
             
             company_name = soup.find('h1').get_text(strip=True) if soup.find('h1') else symbol
@@ -668,51 +686,33 @@ class CachedTickerData:
                 self._loaded = True
     
     def _ensure_loaded(self):
-        """Lazy load ticker data on first access, with rate-limit retry"""
+        """Lazy load ticker data on first access"""
         if not self._loaded:
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    # Use proxy-aware ticker if proxy_fetcher is available
-                    if PROXY_FETCHER_AVAILABLE:
-                        self._ticker_obj = proxy_get_yf_ticker(self.symbol)
-                    else:
-                        self._ticker_obj = yf.Ticker(self.symbol)
-
-                    # Brief jitter delay to avoid hammering the API
-                    time.sleep(random.uniform(0.5, 1.5) * (attempt + 1))
-
-                    # Fetch all data at once to minimize API calls
-                    self._info = self._ticker_obj.info
-                    self._financials = self._ticker_obj.financials
-                    self._balance_sheet = self._ticker_obj.balance_sheet
-                    self._cashflow = self._ticker_obj.cashflow
-                    self._loaded = True
-
-                    # Cache the data
-                    _TICKER_DATA_CACHE[self.symbol] = {
-                        'info': self._info,
-                        'financials': self._financials,
-                        'balance_sheet': self._balance_sheet,
-                        'cashflow': self._cashflow,
-                        'history': self._history
-                    }
-                    _CACHE_TIMESTAMP[self.symbol] = time.time()
-                    break  # success — exit retry loop
-
-                except Exception as e:
-                    err = str(e).lower()
-                    is_rate_limit = "429" in err or "rate" in err or "too many" in err
-                    if is_rate_limit and attempt < max_retries - 1:
-                        wait = (2 ** attempt) * 5 + random.uniform(0, 3)
-                        time.sleep(wait)
-                        continue
-                    # Final attempt or non-rate-limit error
-                    self._info = {}
-                    self._financials = pd.DataFrame()
-                    self._balance_sheet = pd.DataFrame()
-                    self._cashflow = pd.DataFrame()
-                    raise e
+            try:
+                self._ticker_obj = yf.Ticker(self.symbol)
+                # Fetch all data at once to minimize API calls
+                self._info = self._ticker_obj.info
+                self._financials = self._ticker_obj.financials
+                self._balance_sheet = self._ticker_obj.balance_sheet
+                self._cashflow = self._ticker_obj.cashflow
+                self._loaded = True
+                
+                # Cache the data
+                _TICKER_DATA_CACHE[self.symbol] = {
+                    'info': self._info,
+                    'financials': self._financials,
+                    'balance_sheet': self._balance_sheet,
+                    'cashflow': self._cashflow,
+                    'history': self._history
+                }
+                _CACHE_TIMESTAMP[self.symbol] = time.time()
+            except Exception as e:
+                # Return empty data on error
+                self._info = {}
+                self._financials = pd.DataFrame()
+                self._balance_sheet = pd.DataFrame()
+                self._cashflow = pd.DataFrame()
+                raise e
     
     @property
     def info(self):
@@ -753,10 +753,7 @@ class CachedTickerData:
         
         # Fetch new history
         if self._ticker_obj is None:
-            if PROXY_FETCHER_AVAILABLE:
-                self._ticker_obj = proxy_get_yf_ticker(self.symbol)
-            else:
-                self._ticker_obj = yf.Ticker(self.symbol)
+            self._ticker_obj = yf.Ticker(self.symbol)
         
         hist_data = self._ticker_obj.history(*args, **kwargs)
         
@@ -2874,9 +2871,8 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         start_date = end_date - timedelta(days=period_years*365)
         
         # Download stock data - ticker now has suffix
-        _dl = proxy_yf_download if PROXY_FETCHER_AVAILABLE else yf.download
-        stock = _dl(ticker, start=start_date, end=end_date, progress=False)
-        market = _dl(market_ticker, start=start_date, end=end_date, progress=False)
+        stock = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        market = yf.download(market_ticker, start=start_date, end=end_date, progress=False)
         
         if stock.empty or market.empty:
             st.warning(f"⚠️ No data for {ticker} - using default β=1.0")
@@ -2942,15 +2938,14 @@ def get_risk_free_rate(custom_ticker=None):
         debug.append(f"📅 **Fetching data** from {start_date.date()} to {end_date.date()}")
         
         # Try to get data from Yahoo Finance
-        ticker_obj = proxy_get_yf_ticker(ticker) if PROXY_FETCHER_AVAILABLE else yf.Ticker(ticker)
+        ticker_obj = yf.Ticker(ticker)
         gsec_data = ticker_obj.history(period='max')
         
         if len(gsec_data) < 2:
             gsec_data = ticker_obj.history(start=start_date, end=end_date)
         
         if len(gsec_data) < 2:
-            _dl = proxy_yf_download if PROXY_FETCHER_AVAILABLE else yf.download
-            gsec_data = _dl(ticker, start=start_date, end=end_date, progress=False)
+            gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
             if isinstance(gsec_data.columns, pd.MultiIndex):
                 gsec_data.columns = gsec_data.columns.get_level_values(0)
         
@@ -3075,7 +3070,7 @@ def get_market_return(custom_ticker=None):
         debug.append(f"📅 Requesting maximum available historical data")
         
         # Try to get ALL available data using period='max'
-        ticker_obj = proxy_get_yf_ticker(ticker) if PROXY_FETCHER_AVAILABLE else yf.Ticker(ticker)
+        ticker_obj = yf.Ticker(ticker)
         market_data = ticker_obj.history(period='max')
         
         if len(market_data) < 2:
@@ -3084,8 +3079,7 @@ def get_market_return(custom_ticker=None):
             market_data = ticker_obj.history(start=start_date, end=end_date)
         
         if len(market_data) < 2:
-            _dl = proxy_yf_download if PROXY_FETCHER_AVAILABLE else yf.download
-            market_data = _dl(ticker, period='max', progress=False)
+            market_data = yf.download(ticker, period='max', progress=False)
             if isinstance(market_data.columns, pd.MultiIndex):
                 market_data.columns = market_data.columns.get_level_values(0)
         
@@ -6441,7 +6435,7 @@ def main():
                                     st.info("💡 Fetching current price from Yahoo Finance...")
                                     try:
                                         import yfinance as yf
-                                        yf_ticker = proxy_get_yf_ticker(ticker) if PROXY_FETCHER_AVAILABLE else yf.Ticker(ticker)
+                                        yf_ticker = yf.Ticker(ticker)
                                         yf_info = yf_ticker.info if yf_ticker else None
                                         if yf_info:
                                             current_price = yf_info.get('currentPrice', 0) or yf_info.get('regularMarketPrice', 0)
@@ -10664,7 +10658,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 try:
                                     import yfinance as _yf
                                     full_ticker_yf = f"{ticker_symbol_screener.strip().upper()}.{exchange_screener}"
-                                    yf_ticker = proxy_get_yf_ticker(full_ticker_yf) if PROXY_FETCHER_AVAILABLE else _yf.Ticker(full_ticker_yf)
+                                    yf_ticker = _yf.Ticker(full_ticker_yf)
                                     yf_info = yf_ticker.info
                                     yf_shares = yf_info.get('sharesOutstanding', 0) or yf_info.get('impliedSharesOutstanding', 0)
                                     if yf_shares and yf_shares > 0:
