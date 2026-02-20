@@ -235,31 +235,41 @@ Download the Excel file manually from screener.in and upload it in the app.
 
 
 # ---------------------------------------------------------------------------
-# Yahoo Finance proxy support
+# Yahoo Finance proxy + rate-limit support
+# (yfinance >= 0.2 removed the `proxy=` param; everything now uses `session=`)
 # ---------------------------------------------------------------------------
+
+def _build_yf_session(proxy_url: str | None = None) -> requests.Session:
+    """
+    Build a requests.Session suitable for passing to yfinance's session= param.
+    Adds the proxy and browser-like headers that help avoid 429 rate limits.
+    """
+    session = get_session(proxy_url)  # already sets proxy + retry strategy
+    # yfinance uses its own headers, but we add a realistic User-Agent on top
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+    })
+    return session
+
+
 def get_yf_ticker(symbol: str, proxy_url: str | None = None):
     """
-    Returns a yfinance Ticker object that routes all requests through a proxy.
+    Returns a yfinance Ticker using the session= API (yfinance >= 0.2).
 
-    yfinance internally uses requests, and accepts a proxy dict on most
-    data-fetching calls. This wrapper:
-      - Reads proxy from st.secrets if not explicitly provided
-      - Patches the underlying requests session so ALL yfinance calls
-        (info, financials, balance_sheet, cashflow, history) go through the proxy
-      - Falls back to a direct connection if no proxy is configured
-
-    Args:
-        symbol:    Ticker symbol e.g. "RELIANCE.NS"
-        proxy_url: Optional proxy URL. If None, reads from st.secrets["proxy"]["url"].
-
-    Returns:
-        yfinance.Ticker object (proxy-patched if proxy is configured)
+    - Reads proxy from st.secrets["proxy"]["url"] if not explicitly provided.
+    - Passes a shared requests.Session so ALL calls (.info, .financials,
+      .balance_sheet, .cashflow, .history) go through the same proxy session.
+    - Falls back to a direct session if no proxy is configured.
 
     Usage:
-        from proxy_fetcher import get_yf_ticker
         ticker = get_yf_ticker("RELIANCE.NS")
         info = ticker.info
-        financials = ticker.financials
     """
     try:
         import yfinance as yf
@@ -267,39 +277,29 @@ def get_yf_ticker(symbol: str, proxy_url: str | None = None):
         raise ImportError("yfinance is not installed. Run: pip install yfinance")
 
     resolved_proxy = proxy_url or _get_proxy_from_secrets()
-    ticker = yf.Ticker(symbol)
-
-    if resolved_proxy:
-        # yfinance exposes a requests.Session on ticker._session (yfinance >= 0.2)
-        # Patch it so all HTTP calls go through the proxy
-        try:
-            session = get_session(resolved_proxy)
-            ticker._session = session
-        except Exception:
-            # If patching fails, fall back to default (direct) behaviour
-            pass
-
-    return ticker
+    session = _build_yf_session(resolved_proxy)
+    # session= is the correct API for yfinance 0.2+
+    return yf.Ticker(symbol, session=session)
 
 
-def yf_download(
-    tickers,
-    proxy_url: str | None = None,
-    **kwargs
-):
+def yf_download(tickers, proxy_url: str | None = None, max_retries: int = 3, **kwargs):
     """
-    Proxy-aware wrapper around yf.download().
+    Proxy-aware, rate-limit-safe wrapper around yf.download() for yfinance >= 0.2.
+
+    - Uses session= instead of the removed proxy= parameter.
+    - Retries with exponential backoff + jitter on empty results or exceptions,
+      which is the main cause of silent rate-limit failures from Streamlit Cloud.
 
     Args:
-        tickers:   Ticker string or list of tickers.
-        proxy_url: Optional proxy URL. Reads from st.secrets if not provided.
-        **kwargs:  All other yf.download() kwargs (start, end, period, etc.)
+        tickers:     Ticker string or list.
+        proxy_url:   Optional proxy URL. Reads from st.secrets if not provided.
+        max_retries: How many times to retry on failure/empty data (default 3).
+        **kwargs:    All other yf.download() kwargs (start, end, period, etc.)
 
     Returns:
-        pandas DataFrame from yf.download()
+        pandas DataFrame (may be empty if all retries fail).
 
     Usage:
-        from proxy_fetcher import yf_download
         df = yf_download("RELIANCE.NS", start="2020-01-01", end="2024-01-01")
     """
     try:
@@ -309,12 +309,40 @@ def yf_download(
 
     resolved_proxy = proxy_url or _get_proxy_from_secrets()
 
-    if resolved_proxy:
-        # yf.download accepts a proxy dict directly
-        proxy_dict = {"https": resolved_proxy, "http": resolved_proxy}
-        return yf.download(tickers, proxy=proxy_dict, **kwargs)
-    else:
-        return yf.download(tickers, **kwargs)
+    for attempt in range(max_retries):
+        try:
+            # Brief random delay — critical on Streamlit Cloud shared IPs
+            jitter = random.uniform(1.0, 3.0) * (attempt + 1)
+            time.sleep(jitter)
+
+            session = _build_yf_session(resolved_proxy)
+            # session= is the correct param for yfinance 0.2+ (proxy= was removed)
+            result = yf.download(tickers, session=session, **kwargs)
+
+            if result is not None and not result.empty:
+                return result
+
+            # Empty result = likely rate limited silently; wait and retry
+            wait = (2 ** attempt) * 2 + random.uniform(0, 2)
+            time.sleep(wait)
+
+        except TypeError as e:
+            # Catch any unexpected signature mismatches and surface clearly
+            raise RuntimeError(
+                f"yf.download() signature error (yfinance version mismatch?): {e}"
+            ) from e
+        except Exception as e:
+            err = str(e).lower()
+            if "429" in err or "rate" in err or "too many" in err:
+                wait = (2 ** attempt) * 5 + random.uniform(0, 3)
+                time.sleep(wait)
+            else:
+                # Non-rate-limit error — don't retry
+                raise
+
+    # All retries exhausted — return empty DataFrame so caller can handle gracefully
+    import pandas as pd
+    return pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------

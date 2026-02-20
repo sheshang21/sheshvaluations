@@ -668,37 +668,51 @@ class CachedTickerData:
                 self._loaded = True
     
     def _ensure_loaded(self):
-        """Lazy load ticker data on first access"""
+        """Lazy load ticker data on first access, with rate-limit retry"""
         if not self._loaded:
-            try:
-                # Use proxy-aware ticker if proxy_fetcher is available
-                if PROXY_FETCHER_AVAILABLE:
-                    self._ticker_obj = proxy_get_yf_ticker(self.symbol)
-                else:
-                    self._ticker_obj = yf.Ticker(self.symbol)
-                # Fetch all data at once to minimize API calls
-                self._info = self._ticker_obj.info
-                self._financials = self._ticker_obj.financials
-                self._balance_sheet = self._ticker_obj.balance_sheet
-                self._cashflow = self._ticker_obj.cashflow
-                self._loaded = True
-                
-                # Cache the data
-                _TICKER_DATA_CACHE[self.symbol] = {
-                    'info': self._info,
-                    'financials': self._financials,
-                    'balance_sheet': self._balance_sheet,
-                    'cashflow': self._cashflow,
-                    'history': self._history
-                }
-                _CACHE_TIMESTAMP[self.symbol] = time.time()
-            except Exception as e:
-                # Return empty data on error
-                self._info = {}
-                self._financials = pd.DataFrame()
-                self._balance_sheet = pd.DataFrame()
-                self._cashflow = pd.DataFrame()
-                raise e
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Use proxy-aware ticker if proxy_fetcher is available
+                    if PROXY_FETCHER_AVAILABLE:
+                        self._ticker_obj = proxy_get_yf_ticker(self.symbol)
+                    else:
+                        self._ticker_obj = yf.Ticker(self.symbol)
+
+                    # Brief jitter delay to avoid hammering the API
+                    time.sleep(random.uniform(0.5, 1.5) * (attempt + 1))
+
+                    # Fetch all data at once to minimize API calls
+                    self._info = self._ticker_obj.info
+                    self._financials = self._ticker_obj.financials
+                    self._balance_sheet = self._ticker_obj.balance_sheet
+                    self._cashflow = self._ticker_obj.cashflow
+                    self._loaded = True
+
+                    # Cache the data
+                    _TICKER_DATA_CACHE[self.symbol] = {
+                        'info': self._info,
+                        'financials': self._financials,
+                        'balance_sheet': self._balance_sheet,
+                        'cashflow': self._cashflow,
+                        'history': self._history
+                    }
+                    _CACHE_TIMESTAMP[self.symbol] = time.time()
+                    break  # success — exit retry loop
+
+                except Exception as e:
+                    err = str(e).lower()
+                    is_rate_limit = "429" in err or "rate" in err or "too many" in err
+                    if is_rate_limit and attempt < max_retries - 1:
+                        wait = (2 ** attempt) * 5 + random.uniform(0, 3)
+                        time.sleep(wait)
+                        continue
+                    # Final attempt or non-rate-limit error
+                    self._info = {}
+                    self._financials = pd.DataFrame()
+                    self._balance_sheet = pd.DataFrame()
+                    self._cashflow = pd.DataFrame()
+                    raise e
     
     @property
     def info(self):
