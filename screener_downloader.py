@@ -205,12 +205,37 @@ class ScreenerDownloader:
                 print(f"Error: Download failed (Status: {download_response.status_code})")
                 return None
             
+            # --- Validate content is a real Excel file before saving ---
+            content = download_response.content
+            content_type = download_response.headers.get('Content-Type', '')
+            
+            # XLSX files are ZIP archives — they must start with PK magic bytes (0x50 0x4B)
+            is_xlsx = len(content) > 4 and content[:2] == b'PK'
+            
+            if not is_xlsx:
+                snippet = content[:500].decode('utf-8', errors='replace')
+                print(f"Error: Downloaded content is not a valid Excel file.")
+                print(f"Content-Type received: {content_type}")
+                print(f"First 500 chars of response:\n{snippet}")
+                
+                if 'login' in snippet.lower() or 'sign in' in snippet.lower() or 'password' in snippet.lower():
+                    print("\n⚠️  Authentication failure — Screener.in returned a login page.")
+                    print("Your cookies have likely expired. Please refresh screener_cookies.pkl.")
+                elif 'csrf' in snippet.lower() or 'forbidden' in snippet.lower():
+                    print("\n⚠️  CSRF/permission error. Try refreshing cookies and retrying.")
+                elif '<html' in snippet.lower():
+                    print("\n⚠️  Server returned an HTML page instead of the Excel file.")
+                    print("Possible causes: rate limiting, session expiry, or the export URL changed.")
+                else:
+                    print("\n⚠️  Unexpected response format — not an Excel file.")
+                return None
+            
             # Save file
             if output_path is None:
                 output_path = f"{company_symbol}_screener.xlsx"
             
             with open(output_path, 'wb') as f:
-                f.write(download_response.content)
+                f.write(content)
             
             if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                 print(f"✓ Downloaded: {output_path} ({os.path.getsize(output_path)} bytes)")
@@ -236,6 +261,14 @@ class ScreenerDownloader:
             bool: True if successful
         """
         try:
+            # Validate file is a real Excel (ZIP) file before opening
+            with open(excel_path, 'rb') as _f:
+                magic = _f.read(2)
+            if magic != b'PK':
+                print(f"Error removing empty columns: File is not a valid Excel file (not a zip/xlsx). "
+                      f"Got magic bytes: {magic!r}. The downloaded file may be an HTML page or error response.")
+                return False
+            
             wb = load_workbook(excel_path)
             
             if 'Data Sheet' not in wb.sheetnames:
@@ -324,6 +357,14 @@ class ScreenerDownloader:
         """
         try:
             from openpyxl import load_workbook, Workbook
+            
+            # Validate file is a real Excel (ZIP) file before opening
+            with open(screener_excel_path, 'rb') as _f:
+                magic = _f.read(2)
+            if magic != b'PK':
+                print(f"Error converting: File is not a valid Excel file (not a zip/xlsx). "
+                      f"Got magic bytes: {magic!r}. The file may be an HTML page or error response.")
+                return None
             
             # Load source file
             src_wb = load_workbook(screener_excel_path, data_only=True)
