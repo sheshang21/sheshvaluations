@@ -12,6 +12,18 @@ import yfinance as yf
 import streamlit as st
 
 
+def _get_ticker_financials(ticker_obj):
+    """Get income statement — tries .income_stmt (new yfinance) then .financials (old)."""
+    for attr in ('income_stmt', 'financials'):
+        try:
+            df = getattr(ticker_obj, attr)
+            if df is not None and not df.empty:
+                return df
+        except Exception:
+            pass
+    return pd.DataFrame()
+
+
 def fetch_peer_financials(ticker_list, target_ticker=None, exchange_suffix="NS"):
     """
     Fetch comprehensive financial data for all peer companies
@@ -35,7 +47,12 @@ def fetch_peer_financials(ticker_list, target_ticker=None, exchange_suffix="NS")
             
             stock = CachedTickerData(ticker_full) if CachedTickerData else yf.Ticker(ticker_full)
             info = stock.info
-            financials = stock.financials
+            # Use compat helper: CachedTickerData.financials already calls _get_ticker_financials
+            # For raw yf.Ticker objects we call the helper directly
+            if CachedTickerData and isinstance(stock, CachedTickerData):
+                financials = stock.financials
+            else:
+                financials = _get_ticker_financials(stock)
             balance_sheet = stock.balance_sheet
             
             # Extract latest year data
