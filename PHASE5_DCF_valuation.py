@@ -1415,7 +1415,15 @@ if time.time() - st.session_state.session_start_time > 3600:
     st.session_state.yahoo_request_count = 0
     st.session_state.session_start_time = time.time()
 
-# Fix text truncation in metrics and throughout the app
+# ── Page config: must be the very first Streamlit call ──────────────────────
+st.set_page_config(
+    page_title="DCF Valuation",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+# ── end page config ──────────────────────────────────────────────────────────
+
 st.markdown("""
     <style>
     /* Fix metric value truncation */
