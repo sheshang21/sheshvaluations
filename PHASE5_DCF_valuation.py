@@ -8,7 +8,23 @@ import requests
 from bs4 import BeautifulSoup
 import re
 from io import StringIO
-import yfinance as yf
+# ── yf_ratelimit shim ──────────────────────────────────────────
+# Replaces direct yfinance calls with rate-limit-safe wrappers.
+# DO NOT remove this block.
+from yf_ratelimit import safe_ticker as _rl_ticker, safe_download as _rl_download
+
+class _YFShim:
+    """Makes existing yf.Ticker() / yf.download() calls use safe wrappers."""
+    @staticmethod
+    def Ticker(symbol, **_):
+        return _rl_ticker(symbol)
+    @staticmethod
+    def download(tickers, **kwargs):
+        return _rl_download(tickers, **kwargs)
+
+yf = _YFShim()
+# ── end shim ───────────────────────────────────────────────────
+
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -2922,7 +2938,7 @@ def get_risk_free_rate(custom_ticker=None):
         tuple: (rate, debug_messages_list)
     """
     from datetime import datetime, timedelta
-    import yfinance as yf
+    pass  # yf available via module-level shim (yf_ratelimit)
     import pandas as pd
     
     ticker = custom_ticker if custom_ticker else '^TNX'
@@ -3056,7 +3072,7 @@ def get_market_return(custom_ticker=None):
         tuple: (return_rate, debug_messages_list)
     """
     from datetime import datetime, timedelta
-    import yfinance as yf
+    pass  # yf available via module-level shim (yf_ratelimit)
     import pandas as pd
     
     ticker = custom_ticker if custom_ticker else '%5EBSESN'  # Default to BSE Sensex
@@ -3550,7 +3566,20 @@ def extract_financials_unlisted(df_bs, df_pl, year_cols):
     for year_col in last_years:
         # Income Statement
         revenue = get_value_from_df(df_pl, 'Net Revenue', year_col)
-        cogs = get_value_from_df(df_pl, 'Cost of Materials', year_col)
+        # COGS: Use 'Cost of Materials' for manufacturers; fall back to
+        # Purchases of Stock-in-trade +/- Changes in Inventories for trading
+        # companies (e.g. Zepto, Blinkit) where Cost of Materials = 0.
+        cogs_materials = get_value_from_df(df_pl, 'Cost of Materials', year_col)
+        purchases_sit  = get_value_from_df(df_pl, 'Purchases of Stock-in-trade', year_col)
+        changes_inv    = get_value_from_df(df_pl, 'Changes in Inventories', year_col)
+        if cogs_materials > 0:
+            cogs = cogs_materials
+        elif purchases_sit > 0:
+            # Trading COGS = Purchases ± Changes in Inventories
+            # "Changes in Inventories" row is typically positive when stock decreases
+            cogs = purchases_sit + changes_inv
+        else:
+            cogs = 0.0
         employee_exp = get_value_from_df(df_pl, 'Employee Benefit', year_col)
         other_exp = get_value_from_df(df_pl, 'Other Expenses', year_col)
         depreciation = get_value_from_df(df_pl, 'Depreciation', year_col)
@@ -4126,11 +4155,16 @@ def calculate_working_capital_metrics(financials):
         inventory = ensure_valid_number(financials['inventory'][i], 0)
         receivables = ensure_valid_number(financials['receivables'][i], 0)
         payables = ensure_valid_number(financials['payables'][i], 0)
-        
+
+        # For trading companies (e.g. Zepto) COGS may be 0 because Cost of Materials = 0.
+        # In that case fall back to revenue as the denominator so inventory days and
+        # creditor days are still meaningful (same base as debtors days).
+        cogs_or_rev = cogs if cogs > 0 else revenue
+
         # Calculate days only if we have valid denominators
-        inv_days = safe_divide(inventory * 365, cogs, default=0) if has_valid_inventory and cogs > 0 else 0
+        inv_days = safe_divide(inventory * 365, cogs_or_rev, default=0) if has_valid_inventory and cogs_or_rev > 0 else 0
         deb_days = safe_divide(receivables * 365, revenue, default=0) if has_valid_receivables and revenue > 0 else 0
-        cred_days = safe_divide(payables * 365, cogs, default=0) if has_valid_payables and cogs > 0 else 0
+        cred_days = safe_divide(payables * 365, cogs_or_rev, default=0) if has_valid_payables and cogs_or_rev > 0 else 0
         
         wc_metrics['inventory_days'].append(ensure_valid_number(inv_days, 0))
         wc_metrics['debtor_days'].append(ensure_valid_number(deb_days, 0))
@@ -4745,14 +4779,18 @@ def project_financials(financials, wc_metrics, years, tax_rate,
             cred_days_to_use = 0
         
         # Calculate WC components using determined days
+        # For trading companies cogs may be 0; fall back to revenue so that
+        # inventory and creditor projections use the same base as debtor days.
+        projected_cogs_or_rev = projected_cogs if projected_cogs > 0 else projected_revenue
+
         if inv_days_to_use > 0:
-            projected_inventory = safe_divide(projected_cogs * inv_days_to_use, 365, default=0)
+            projected_inventory = safe_divide(projected_cogs_or_rev * inv_days_to_use, 365, default=0)
         
         if deb_days_to_use > 0:
             projected_receivables = safe_divide(projected_revenue * deb_days_to_use, 365, default=0)
         
         if cred_days_to_use > 0:
-            projected_payables = safe_divide(projected_cogs * cred_days_to_use, 365, default=0)
+            projected_payables = safe_divide(projected_cogs_or_rev * cred_days_to_use, 365, default=0)
         
         # ROBUST: Ensure all WC components are valid numbers
         projected_inventory = ensure_valid_number(projected_inventory, 0)
@@ -6434,7 +6472,7 @@ def main():
                                 if current_price == 0:
                                     st.info("💡 Fetching current price from Yahoo Finance...")
                                     try:
-                                        import yfinance as yf
+                                        pass  # yf available via module-level shim (yf_ratelimit)
                                         yf_ticker = yf.Ticker(ticker)
                                         yf_info = yf_ticker.info if yf_ticker else None
                                         if yf_info:
@@ -10959,7 +10997,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                     'Fair Value (₹)': '₹{:.2f}',
                                     'Current Price (₹)': '₹{:.2f}',
                                     'Upside/Downside (%)': '{:+.1f}%'
-                                }).applymap(
+                                }).map(
                                     lambda x: 'background-color: #d4edda' if isinstance(x, (int, float)) and x > 0 else ('background-color: #f8d7da' if isinstance(x, (int, float)) and x < 0 else ''),
                                     subset=['Upside/Downside (%)']
                                 ),
