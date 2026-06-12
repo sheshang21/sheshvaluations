@@ -20,6 +20,9 @@ class _YFShim:
         return _rl_ticker(symbol)
     @staticmethod
     def download(tickers, **kwargs):
+        # Strip kwargs that safe_download sets internally to prevent "multiple values" error
+        for _k in ('progress', 'auto_adjust', 'back_adjust', 'repair'):
+            kwargs.pop(_k, None)
         return _rl_download(tickers, **kwargs)
 
 yf = _YFShim()
@@ -1415,15 +1418,7 @@ if time.time() - st.session_state.session_start_time > 3600:
     st.session_state.yahoo_request_count = 0
     st.session_state.session_start_time = time.time()
 
-# ── Page config: must be the very first Streamlit call ──────────────────────
-st.set_page_config(
-    page_title="DCF Valuation",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-# ── end page config ──────────────────────────────────────────────────────────
-
+# Fix text truncation in metrics and throughout the app
 st.markdown("""
     <style>
     /* Fix metric value truncation */
@@ -2895,8 +2890,8 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         start_date = end_date - timedelta(days=period_years*365)
         
         # Download stock data - ticker now has suffix
-        stock = yf.download(ticker, start=start_date, end=end_date, progress=False)
-        market = yf.download(market_ticker, start=start_date, end=end_date, progress=False)
+        stock = yf.download(ticker, start=start_date, end=end_date)
+        market = yf.download(market_ticker, start=start_date, end=end_date)
         
         if stock.empty or market.empty:
             st.warning(f"⚠️ No data for {ticker} - using default β=1.0")
@@ -2969,7 +2964,7 @@ def get_risk_free_rate(custom_ticker=None):
             gsec_data = ticker_obj.history(start=start_date, end=end_date)
         
         if len(gsec_data) < 2:
-            gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+            gsec_data = yf.download(ticker, start=start_date, end=end_date)
             if isinstance(gsec_data.columns, pd.MultiIndex):
                 gsec_data.columns = gsec_data.columns.get_level_values(0)
         
@@ -3103,7 +3098,7 @@ def get_market_return(custom_ticker=None):
             market_data = ticker_obj.history(start=start_date, end=end_date)
         
         if len(market_data) < 2:
-            market_data = yf.download(ticker, period='max', progress=False)
+            market_data = yf.download(ticker, period='max')
             if isinstance(market_data.columns, pd.MultiIndex):
                 market_data.columns = market_data.columns.get_level_values(0)
         
