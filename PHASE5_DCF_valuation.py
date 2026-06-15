@@ -1,4 +1,7 @@
 import streamlit as st
+
+st.set_page_config(layout="wide", page_title="DCF Valuation Engine")
+
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -4953,23 +4956,31 @@ def calculate_peer_unlevered_beta(peer_tickers, target_financials, tax_rate, per
             peer_de = 0.0
             try:
                 peer_stock = get_cached_ticker(ticker)
-                info = peer_stock.info or {}
+
+                # .info can legitimately return None – guard every access
+                raw_info = peer_stock.info
+                info = raw_info if isinstance(raw_info, dict) else {}
+
                 peer_equity = ensure_valid_number(info.get('bookValue', 0), 0)
                 peer_price  = ensure_valid_number(
-                    info.get('currentPrice', 0) or info.get('regularMarketPrice', 0), 0)
+                    info.get('currentPrice') or info.get('regularMarketPrice') or 0, 0)
                 peer_shares = ensure_valid_number(info.get('sharesOutstanding', 0), 0)
                 peer_mktcap = peer_price * peer_shares if peer_price > 0 and peer_shares > 0 else 0
 
-                # Try balance-sheet debt first
+                # Try balance-sheet debt (balance_sheet may be empty / have no columns)
                 peer_bs = peer_stock.balance_sheet
-                peer_ltd = safe_extract(peer_bs, 'Long Term Debt', peer_bs.columns[0]) \
-                    if not peer_bs.empty and 'Long Term Debt' in peer_bs.index else 0
-                peer_std = safe_extract(peer_bs, 'Current Debt', peer_bs.columns[0]) \
-                    if not peer_bs.empty and 'Current Debt' in peer_bs.index else 0
+                if peer_bs is not None and not peer_bs.empty and len(peer_bs.columns) > 0:
+                    bs_col = peer_bs.columns[0]
+                    peer_ltd = safe_extract(peer_bs, 'Long Term Debt', bs_col)                         if 'Long Term Debt' in peer_bs.index else 0
+                    peer_std = safe_extract(peer_bs, 'Current Debt', bs_col)                         if 'Current Debt' in peer_bs.index else 0
+                else:
+                    peer_ltd = peer_std = 0
                 peer_total_debt = peer_ltd + peer_std
 
-                # Equity denominator: use book value × shares if available, else market cap
-                peer_eq_value = peer_equity * peer_shares if peer_equity > 0 and peer_shares > 0 else peer_mktcap
+                # Equity denominator: book value × shares → market cap → 0
+                peer_eq_value = (peer_equity * peer_shares
+                                 if peer_equity > 0 and peer_shares > 0
+                                 else peer_mktcap)
                 peer_de = peer_total_debt / peer_eq_value if peer_eq_value > 0 else 0.0
                 peer_de = max(0.0, peer_de)
             except Exception:
