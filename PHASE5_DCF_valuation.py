@@ -20,9 +20,6 @@ class _YFShim:
         return _rl_ticker(symbol)
     @staticmethod
     def download(tickers, **kwargs):
-        # Strip kwargs that safe_download sets internally to prevent "multiple values" error
-        for _k in ('progress', 'auto_adjust', 'back_adjust', 'repair'):
-            kwargs.pop(_k, None)
         return _rl_download(tickers, **kwargs)
 
 yf = _YFShim()
@@ -2889,9 +2886,18 @@ def get_stock_beta(ticker, market_ticker=None, period_years=3):
         end_date = datetime.now()
         start_date = end_date - timedelta(days=period_years*365)
         
-        # Download stock data - ticker now has suffix
-        stock = yf.download(ticker, start=start_date, end=end_date)
-        market = yf.download(market_ticker, start=start_date, end=end_date)
+        # Use Ticker.history() to avoid yf.download() progress kwarg conflict in newer yfinance
+        stock_obj = yf.Ticker(ticker)
+        market_obj = yf.Ticker(market_ticker)
+        
+        stock = stock_obj.history(start=start_date, end=end_date, period=None)
+        market = market_obj.history(start=start_date, end=end_date, period=None)
+        
+        # Flatten MultiIndex columns if present (yfinance >= 0.2.x may return them)
+        if isinstance(stock.columns, pd.MultiIndex):
+            stock.columns = stock.columns.get_level_values(0)
+        if isinstance(market.columns, pd.MultiIndex):
+            market.columns = market.columns.get_level_values(0)
         
         if stock.empty or market.empty:
             st.warning(f"⚠️ No data for {ticker} - using default β=1.0")
@@ -2961,10 +2967,10 @@ def get_risk_free_rate(custom_ticker=None):
         gsec_data = ticker_obj.history(period='max')
         
         if len(gsec_data) < 2:
-            gsec_data = ticker_obj.history(start=start_date, end=end_date)
+            gsec_data = ticker_obj.history(start=start_date, end=end_date, period=None)
         
         if len(gsec_data) < 2:
-            gsec_data = yf.download(ticker, start=start_date, end=end_date)
+            gsec_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
             if isinstance(gsec_data.columns, pd.MultiIndex):
                 gsec_data.columns = gsec_data.columns.get_level_values(0)
         
@@ -3095,10 +3101,10 @@ def get_market_return(custom_ticker=None):
         if len(market_data) < 2:
             # Fallback: try with date range
             start_date = end_date - timedelta(days=365*30)  # 30 years as fallback
-            market_data = ticker_obj.history(start=start_date, end=end_date)
+            market_data = ticker_obj.history(start=start_date, end=end_date, period=None)
         
         if len(market_data) < 2:
-            market_data = yf.download(ticker, period='max')
+            market_data = yf.download(ticker, period='max', progress=False)
             if isinstance(market_data.columns, pd.MultiIndex):
                 market_data.columns = market_data.columns.get_level_values(0)
         
@@ -3542,7 +3548,11 @@ def create_price_vs_value_gauge(current_price, fair_value):
 def extract_financials_unlisted(df_bs, df_pl, year_cols):
     """Extract financial metrics from Excel DataFrames"""
     num_years = min(3, len(year_cols))
-    last_years = year_cols[-num_years:]
+    # year_cols is sorted oldest->newest. Take the most recent N years,
+    # then REVERSE to newest-first so financials['...'][0] = latest year,
+    # matching the convention used everywhere else (Yahoo/Screener data,
+    # WACC, DCF projections, comp valuation, etc.)
+    last_years = list(reversed(year_cols[-num_years:]))
     
     financials = {
         'years': last_years,
@@ -4714,8 +4724,13 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         projected_opex = projected_revenue * (avg_opex_margin / 100)
         projected_ebitda = projected_revenue - projected_cogs - projected_opex
         
+        # USER OVERRIDE: EBITDA margin directly overrides the derived EBITDA
+        if ebitda_margin_override:
+            projected_ebitda = projected_revenue * (float(ebitda_margin_override) / 100)
+        
         # Sanity check: EBITDA should be positive for healthy companies
-        if projected_ebitda < 0:
+        # (skip auto-correction if user explicitly set the EBITDA margin)
+        if projected_ebitda < 0 and not ebitda_margin_override:
             # Adjust opex to maintain 5% EBITDA margin
             projected_opex = projected_revenue * 0.85 - projected_cogs
             projected_ebitda = projected_revenue * 0.15
@@ -4729,7 +4744,16 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         # Depreciation: Apply to growing FA base
         # FA will grow based on net CapEx
         projected_fa = last_fa + capex  # Will subtract depreciation next
-        projected_dep = projected_fa * (avg_dep_rate / 100)
+        
+        # USER OVERRIDE: Depreciation method selector
+        if depreciation_method == "% of Revenue":
+            projected_dep = projected_revenue * (avg_dep_rate / 100)
+        elif depreciation_method == "Absolute Value":
+            # depreciation_rate_override (if provided) is treated as an absolute ₹ Lacs value
+            projected_dep = float(depreciation_rate_override) if depreciation_rate_override else avg_dep_rate
+        else:
+            # "Auto" or "% of Fixed Assets" (default)
+            projected_dep = projected_fa * (avg_dep_rate / 100)
         
         # Adjust FA after depreciation
         projected_fa = projected_fa - projected_dep
@@ -4804,6 +4828,12 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         projected_wc = projected_inventory + projected_receivables - projected_payables
         projected_wc = ensure_valid_number(projected_wc, 0)
         
+        # USER OVERRIDE: Working Capital as % of Revenue takes priority over
+        # the days-based build-up above
+        if working_capital_pct_override:
+            projected_wc = projected_revenue * (float(working_capital_pct_override) / 100)
+            projected_wc = ensure_valid_number(projected_wc, 0)
+        
         # Calculate change in WC
         delta_wc = projected_wc - last_wc
         delta_wc = ensure_valid_number(delta_wc, 0)
@@ -4869,6 +4899,133 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         'avg_capex_ratio': avg_capex_ratio
     }
 
+def calculate_peer_unlevered_beta(peer_tickers, target_financials, tax_rate, period_years=3):
+    """
+    Hamada-equation beta pipeline:
+      1. Fetch 3-year raw (levered) beta for every comp ticker.
+      2. Unlever each beta using the peer's own D/E ratio.
+      3. Average the unlevered betas.
+      4. Relever the average using the TARGET company's D/E ratio.
+
+    Hamada formula:
+        β_L  = β_U × [1 + (1 − t) × D/E]
+        β_U  = β_L  / [1 + (1 − t) × D/E]
+
+    Args:
+        peer_tickers  : comma-separated ticker strings (may include .NS/.BO).
+        target_financials : financials dict of the company being valued.
+        tax_rate      : effective tax rate % (e.g. 25.0).
+        period_years  : lookback for beta regression (default 3).
+
+    Returns:
+        dict with keys:
+            relevered_beta, avg_unlevered_beta, peer_details,
+            target_de_ratio, n_peers_used
+    """
+    import time, random
+
+    ticker_list = [t.strip() for t in peer_tickers.split(',') if t.strip()]
+    t = tax_rate / 100.0
+
+    # ── Target D/E from the TARGET company's own balance sheet ──────────
+    tgt_eq   = ensure_valid_number(target_financials['equity'][0], 1)   # Lacs
+    tgt_std  = ensure_valid_number(target_financials['st_debt'][0], 0)
+    tgt_ltd  = ensure_valid_number(target_financials['lt_debt'][0], 0)
+    tgt_debt = tgt_std + tgt_ltd
+    target_de = tgt_debt / tgt_eq if tgt_eq > 0 else 0.0
+
+    peer_details    = []
+    unlevered_betas = []
+
+    for ticker in ticker_list:
+        try:
+            # Small polite delay between API calls
+            if peer_details:
+                time.sleep(random.uniform(0.5, 1.0))
+
+            # ── Step 1: raw (levered) beta via regression ─────────────────
+            raw_beta = get_stock_beta(ticker, period_years=period_years)
+            if raw_beta <= 0:
+                st.caption(f"   ↳ {ticker}: skipped (invalid beta {raw_beta:.3f})")
+                continue
+
+            # ── Step 2: peer D/E from yfinance ───────────────────────────
+            peer_de = 0.0
+            try:
+                peer_stock = get_cached_ticker(ticker)
+                info = peer_stock.info or {}
+                peer_equity = ensure_valid_number(info.get('bookValue', 0), 0)
+                peer_price  = ensure_valid_number(
+                    info.get('currentPrice', 0) or info.get('regularMarketPrice', 0), 0)
+                peer_shares = ensure_valid_number(info.get('sharesOutstanding', 0), 0)
+                peer_mktcap = peer_price * peer_shares if peer_price > 0 and peer_shares > 0 else 0
+
+                # Try balance-sheet debt first
+                peer_bs = peer_stock.balance_sheet
+                peer_ltd = safe_extract(peer_bs, 'Long Term Debt', peer_bs.columns[0]) \
+                    if not peer_bs.empty and 'Long Term Debt' in peer_bs.index else 0
+                peer_std = safe_extract(peer_bs, 'Current Debt', peer_bs.columns[0]) \
+                    if not peer_bs.empty and 'Current Debt' in peer_bs.index else 0
+                peer_total_debt = peer_ltd + peer_std
+
+                # Equity denominator: use book value × shares if available, else market cap
+                peer_eq_value = peer_equity * peer_shares if peer_equity > 0 and peer_shares > 0 else peer_mktcap
+                peer_de = peer_total_debt / peer_eq_value if peer_eq_value > 0 else 0.0
+                peer_de = max(0.0, peer_de)
+            except Exception:
+                peer_de = 0.0   # assume all-equity if we can't fetch
+
+            # ── Step 3: unlever ───────────────────────────────────────────
+            # β_U = β_L / [1 + (1-t) × D/E]
+            unlevered_beta = raw_beta / (1 + (1 - t) * peer_de)
+            unlevered_beta = max(0.1, min(unlevered_beta, 3.0))
+
+            unlevered_betas.append(unlevered_beta)
+            peer_details.append({
+                'ticker'        : ticker,
+                'raw_beta'      : raw_beta,
+                'peer_de_ratio' : peer_de,
+                'unlevered_beta': unlevered_beta,
+            })
+
+            st.caption(
+                f"   {ticker} → βL={raw_beta:.3f}, D/E={peer_de:.2f}, "
+                f"βU={unlevered_beta:.3f}"
+            )
+
+        except Exception as e:
+            st.warning(f"⚠️ Beta unlever failed for {ticker}: {str(e)[:80]}")
+            continue
+
+    if not unlevered_betas:
+        # Hard fallback: return levered beta of 1.0
+        return {
+            'relevered_beta'    : 1.0,
+            'avg_unlevered_beta': 1.0,
+            'peer_details'      : [],
+            'target_de_ratio'   : target_de,
+            'n_peers_used'      : 0,
+            'fallback'          : True,
+        }
+
+    # ── Step 4: average unlevered betas ──────────────────────────────────
+    avg_bu = float(np.mean(unlevered_betas))
+
+    # ── Step 5: relever using target company's D/E ───────────────────────
+    # β_L = β_U × [1 + (1-t) × D/E_target]
+    relevered_beta = avg_bu * (1 + (1 - t) * target_de)
+    relevered_beta = max(0.1, min(relevered_beta, 3.0))
+
+    return {
+        'relevered_beta'    : relevered_beta,
+        'avg_unlevered_beta': avg_bu,
+        'peer_details'      : peer_details,
+        'target_de_ratio'   : target_de,
+        'n_peers_used'      : len(unlevered_betas),
+        'fallback'          : False,
+    }
+
+
 def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None, manual_rm_rate=None):
     """Calculate WACC with proper beta calculation from peers"""
     # Cost of Equity (Ke)
@@ -4876,30 +5033,43 @@ def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None,
     rf = manual_rf_rate if manual_rf_rate is not None else 6.83
     rm = manual_rm_rate if manual_rm_rate is not None else 12.0
     
-    # Calculate beta from peer tickers
+    # ── Beta: unlever peer betas → average → relever for target ──────────
     beta = 1.0
+    beta_details = {}
     if peer_tickers and peer_tickers.strip():
-        ticker_list = [t.strip() for t in peer_tickers.split(',') if t.strip()]
-        betas = []
-        
-        for ticker in ticker_list:
-            try:
-                ticker_beta = get_stock_beta(ticker)
-                if ticker_beta > 0:
-                    betas.append(ticker_beta)
-                    st.info(f"Beta for {ticker}: {ticker_beta:.3f}")
-            except Exception as e:
-                st.warning(f"Could not fetch beta for {ticker}: {str(e)}")
-        
-        if betas:
-            beta = np.mean(betas)
-            st.success(f"✅ Average peer beta: {beta:.3f} (from {len(betas)} peers)")
+        st.markdown("#### 🔢 Beta Calculation (Hamada Unlevering / Relevering)")
+        st.caption(
+            "Step 1: compute 3-yr regression β for each comp. "
+            "Step 2: unlever using each peer's D/E. "
+            "Step 3: average unlevered βs. "
+            "Step 4: relever using target company's D/E."
+        )
+        beta_result = calculate_peer_unlevered_beta(
+            peer_tickers, financials, tax_rate, period_years=3
+        )
+        beta         = beta_result['relevered_beta']
+        beta_details = beta_result
+
+        if beta_result.get('fallback'):
+            st.warning("⚠️ Could not compute unlevered beta from peers — using default β=1.0")
         else:
-            st.warning("⚠️ Could not calculate beta from peers, using default β=1.0")
-            beta = 1.0
+            st.success(
+                f"✅ Avg Unlevered β = {beta_result['avg_unlevered_beta']:.3f} | "
+                f"Target D/E = {beta_result['target_de_ratio']:.2f} | "
+                f"**Relevered β = {beta:.3f}** "
+                f"(from {beta_result['n_peers_used']} peers)"
+            )
+            with st.expander("📋 Beta Breakdown by Peer"):
+                for pd_row in beta_result['peer_details']:
+                    st.write(
+                        f"• **{pd_row['ticker']}** | "
+                        f"Levered β = {pd_row['raw_beta']:.3f} | "
+                        f"Peer D/E = {pd_row['peer_de_ratio']:.2f} | "
+                        f"Unlevered β = {pd_row['unlevered_beta']:.3f}"
+                    )
     else:
         st.warning("⚠️ No peer tickers provided, using default β=1.0")
-    
+
     ke = rf + (beta * (rm - rf))
     
     # Cost of Debt (Kd) - USE NEWEST values (index 0)
@@ -4943,7 +5113,8 @@ def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None,
         'we': we * 100,
         'wd': wd * 100,
         'equity': equity,
-        'debt': total_debt
+        'debt': total_debt,
+        'beta_details': beta_details,
     }
 
 def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=None, manual_rm_rate=None):
@@ -4961,24 +5132,38 @@ def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=
     rf = manual_rf_rate if manual_rf_rate is not None else 6.83
     rm = manual_rm_rate if manual_rm_rate is not None else 12.0
     
+    # ── Beta: unlever peer betas → average → relever for target (Bank) ────
     beta = 1.0
+    beta_details = {}
     if peer_tickers and peer_tickers.strip():
-        ticker_list = [t.strip() for t in peer_tickers.split(',') if t.strip()]
-        betas = []
-        
-        for ticker in ticker_list:
-            try:
-                ticker_beta = get_stock_beta(ticker)
-                if ticker_beta > 0:
-                    betas.append(ticker_beta)
-            except:
-                pass
-        
-        if betas:
-            beta = np.mean(betas)
-            st.success(f"✅ Average bank peer beta: {beta:.3f}")
+        st.markdown("#### 🔢 Beta Calculation (Hamada Unlevering / Relevering) — Bank Mode")
+        st.caption(
+            "Unlevering peer betas then relevering to target bank's own D/E. "
+            "For banks the 'equity' denominator uses book equity from the balance sheet."
+        )
+        beta_result = calculate_peer_unlevered_beta(
+            peer_tickers, financials, tax_rate, period_years=3
+        )
+        beta         = beta_result['relevered_beta']
+        beta_details = beta_result
+
+        if beta_result.get('fallback'):
+            st.warning("⚠️ Could not compute unlevered beta — using default β=1.0")
         else:
-            beta = 1.0
+            st.success(
+                f"✅ Avg Unlevered β = {beta_result['avg_unlevered_beta']:.3f} | "
+                f"Target D/E = {beta_result['target_de_ratio']:.2f} | "
+                f"**Relevered β = {beta:.3f}** "
+                f"(from {beta_result['n_peers_used']} bank peers)"
+            )
+            with st.expander("📋 Bank Beta Breakdown by Peer"):
+                for pd_row in beta_result['peer_details']:
+                    st.write(
+                        f"• **{pd_row['ticker']}** | "
+                        f"Levered β = {pd_row['raw_beta']:.3f} | "
+                        f"Peer D/E = {pd_row['peer_de_ratio']:.2f} | "
+                        f"Unlevered β = {pd_row['unlevered_beta']:.3f}"
+                    )
     
     ke = rf + (beta * (rm - rf))
     
@@ -5050,7 +5235,8 @@ def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=
         'debt': total_liabilities_current,
         'calculation_method': 'Bank Methodology (Cost of Funds)',
         'interest_expense': interest_expense,
-        'avg_liabilities': avg_interest_bearing_liabilities
+        'avg_liabilities': avg_interest_bearing_liabilities,
+        'beta_details': beta_details,
     }
 
 def calculate_dcf_valuation(projections, wacc_details, terminal_growth, num_shares, cash_balance=0, manual_discount_rate=None):
