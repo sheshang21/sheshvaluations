@@ -801,36 +801,39 @@ def clear_ticker_cache():
 
 # ================================
 
-# Exchange suffix map — NASDAQ and NYSE have NO suffix on Yahoo Finance
-EXCHANGE_SUFFIX_MAP = {
-    "NSE":    "NS",
-    "BSE":    "BO",
-    "NASDAQ": "",    # No suffix needed
-    "NYSE":   "",    # No suffix needed
-    "SSE":    "SS",  # Shanghai Stock Exchange
-}
-
-# Exchanges that are Indian (peer comparison / competitor analysis restricted to these)
-INDIAN_EXCHANGES = {"NSE", "BSE"}
-
-def get_ticker_with_exchange(ticker, exchange):
+# Helper function for ticker exchange suffix
+def get_currency_symbol(info_dict):
     """
-    Add exchange suffix to ticker.
-    - NSE  → TICKER.NS
-    - BSE  → TICKER.BO
-    - NASDAQ/NYSE → TICKER  (no suffix)
-    - SSE  → TICKER.SS
-    Already-suffixed tickers are returned unchanged.
+    Return the correct currency symbol for a Yahoo Finance info dict.
+    Defaults to ₹ for INR (Indian stocks), otherwise uses the ISO code
+    wrapped neatly (e.g. '$', '€', 'CNY ', 'USD ').
     """
+    _SYMBOLS = {
+        'INR': '₹',
+        'USD': '$',
+        'EUR': '€',
+        'GBP': '£',
+        'JPY': '¥',
+        'CNY': '¥',
+        'HKD': 'HK$',
+        'SGD': 'S$',
+        'AUD': 'A$',
+        'CAD': 'C$',
+        'CHF': 'CHF ',
+        'KRW': '₩',
+        'TWD': 'NT$',
+        'BRL': 'R$',
+    }
+    if not info_dict:
+        return '₹'
+    # yfinance exposes 'currency' (price currency) and 'financialCurrency' (statement currency)
+    ccy = info_dict.get('currency') or info_dict.get('financialCurrency') or 'INR'
+    return _SYMBOLS.get(ccy.upper(), f'{ccy} ')
+    """Add exchange suffix to ticker"""
     ticker = ticker.strip().upper()
-    # If user already included a known suffix, keep it as-is
-    known_suffixes = (".NS", ".BO", ".SS")
-    if any(ticker.endswith(s) for s in known_suffixes):
-        return ticker
-    suffix = EXCHANGE_SUFFIX_MAP.get(exchange, exchange)
-    if suffix:
-        return f"{ticker}.{suffix}"
-    return ticker  # NASDAQ / NYSE — no suffix
+    if '.NS' in ticker or '.BO' in ticker:
+        return ticker  # Already has suffix
+    return f"{ticker}.{exchange}"
 
 # PDF EXPORT FUNCTIONS (EMBEDDED)
 # ================================
@@ -3734,112 +3737,32 @@ def fetch_screener_peer_data(ticker_symbol):
         return None
 
 
-def _get_price_at_date(ticker_obj, price_date):
+def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financials=None, target_shares=None, exchange_suffix="NS", projections=None, use_screener_peers=False):
     """
-    Fetch the closing price of a ticker on or just before `price_date` (a datetime.date).
-    Falls back to the nearest available trading day within ±5 calendar days.
-    Returns float or 0.
-    """
-    try:
-        from datetime import timedelta
-        start = price_date - timedelta(days=7)
-        end   = price_date + timedelta(days=1)
-        hist  = ticker_obj.history(start=str(start), end=str(end))
-        if hist is not None and not hist.empty:
-            # Get the last close on or before price_date
-            hist.index = pd.to_datetime(hist.index).normalize()
-            target = pd.Timestamp(price_date)
-            subset = hist[hist.index <= target]
-            if not subset.empty:
-                return float(subset['Close'].iloc[-1])
-            # If price_date is before all data, use the first available
-            return float(hist['Close'].iloc[0])
-    except Exception:
-        pass
-    return 0.0
-
-
-def _get_fy_financials_col(financials_df, price_date):
-    """
-    Given a yfinance financials DataFrame (columns are fiscal-year-end timestamps,
-    newest first) and a price_date (datetime.date), return the column whose fiscal
-    year contains price_date.
-
-    Logic:
-    - yfinance reports the fiscal-year-END date as the column timestamp.
-    - We detect whether the company uses a Apr-Mar Indian FY or a Jan-Dec calendar FY
-      by looking at the month of the most recent column.
-    - For Indian FY (year-end = March):   FY26 = Apr-2025 → Mar-2026
-    - For calendar FY (year-end = Dec):   FY25 = Jan-2025 → Dec-2025
-    - For any other year-end month M:     FY runs from (M+1) of prior year to M of reported year.
-    - Returns the column (pd.Timestamp) whose FY contains price_date, or the closest
-      available column if none exactly match (most-recent fallback).
-    """
-    if financials_df is None or financials_df.empty:
-        return None
-    cols = list(financials_df.columns)  # sorted newest → oldest
-    if not cols:
-        return None
-
-    from datetime import date as _date
-    pd_date = pd.Timestamp(price_date)
-
-    for col in cols:
-        fy_end = pd.Timestamp(col)
-        fy_end_month = fy_end.month
-        fy_end_year  = fy_end.year
-
-        # FY start = first day of the month after the PREVIOUS year-end
-        # e.g. year-end March → FY start = April 1 of prior year
-        if fy_end_month == 12:
-            fy_start = pd.Timestamp(f"{fy_end_year}-01-01")
-        else:
-            fy_start = pd.Timestamp(f"{fy_end_year - 1}-{fy_end_month + 1:02d}-01")
-
-        if fy_start <= pd_date <= fy_end:
-            return col
-
-    # Fallback: use the most recent column
-    return cols[0]
-
-
-def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financials=None, target_shares=None, exchange_suffix="NS", projections=None, use_screener_peers=False, comp_price_date=None):
-    """
-    Perform comparative valuation using peer multiples.
-
+    Perform comparative valuation using peer multiples
+    
     Args:
         target_ticker: Target company ticker
         comp_tickers_str: Comma-separated peer tickers
         target_financials: Target company financials dict
         target_shares: Target company shares outstanding
-        exchange_suffix: NS, BO, or "" for NASDAQ/NYSE
+        exchange_suffix: NS or BO
         projections: DCF projections dict with 'nopat' key
         use_screener_peers: If True, fetch peer data from Screener.in instead of Yahoo Finance
-        comp_price_date: datetime.date — price on this date is used for all peers; financials
-            are pulled from the FY that contains this date. Defaults to today.
     """
     try:
         comp_tickers = [t.strip() for t in comp_tickers_str.split(',') if t.strip()]
         
         if not comp_tickers:
             return None
-
-        # ── Price date resolution ──────────────────────────────────────────
-        from datetime import date as _date
-        _today = _date.today()
-        _use_hist_price = comp_price_date is not None and comp_price_date < _today
-        if comp_price_date is None:
-            comp_price_date = _today
-        if _use_hist_price:
-            st.info(f"📅 **Comp Price Date:** {comp_price_date.strftime('%d-%b-%Y')} — fetching historical prices & matching FY financials for all companies.")
-        # ─────────────────────────────────────────────────────────────────
         
         results = {
             'target': {},
             'comparables': [],
             'multiples_stats': {},
             'valuations': {},
-            '_peer_source': 'screener' if use_screener_peers else 'yahoo'
+            '_peer_source': 'screener' if use_screener_peers else 'yahoo',
+            '_currency_symbol': '₹'  # default; updated below from target info
         }
         
         # Get target company data
@@ -3849,46 +3772,30 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
             target_info = target_stock.info if target_stock else None
             target_financials_yf = target_stock.financials
             target_bs = target_stock.balance_sheet
-
+            
             if not target_info:
                 st.error(f"Could not fetch data for {target_ticker}")
                 return results
-
-            # ── FY-aware column for target ────────────────────────────────
-            _target_fy_col = _get_fy_financials_col(target_financials_yf, comp_price_date)
-
-            # Price: historical on comp_price_date or current
-            if _use_hist_price:
-                _target_price = _get_price_at_date(target_stock, comp_price_date)
-                if _target_price == 0:
-                    _target_price = target_info.get('currentPrice', 0) or target_info.get('regularMarketPrice', 0)
-            else:
-                _target_price = target_info.get('currentPrice', 0) or target_info.get('regularMarketPrice', 0)
-
-            # Financials from FY column
-            _tfc = _target_fy_col
-            _t_revenue   = safe_extract(target_financials_yf, 'Total Revenue', _tfc) if (_tfc and 'Total Revenue' in target_financials_yf.index) else 0
-            _t_ebitda    = target_info.get('ebitda', 0)  # yfinance .info ebitda is TTM; use if col not available
-            _t_net_income = safe_extract(target_financials_yf, 'Net Income', _tfc) if (_tfc and 'Net Income' in target_financials_yf.index) else 0
-            # BS uses the same FY col
-            _tbc = _get_fy_financials_col(target_bs, comp_price_date)
-            _t_total_debt = safe_extract(target_bs, 'Long Term Debt', _tbc) if (_tbc and 'Long Term Debt' in target_bs.index) else 0
-            _t_cash       = safe_extract(target_bs, 'Cash And Cash Equivalents', _tbc) if (_tbc and 'Cash And Cash Equivalents' in target_bs.index) else 0
+            
+            # Detect currency from target ticker
+            results['_currency_symbol'] = get_currency_symbol(target_info)
+            _csym = results['_currency_symbol']  # shorthand for formula strings below
 
             results['target'] = {
                 'name': target_info.get('longName', target_ticker),
-                'current_price': _target_price,
+                # Robust price fetching - try multiple methods
+                'current_price': target_info.get('currentPrice', 0) or target_info.get('regularMarketPrice', 0) or 0,
                 'shares': target_info.get('sharesOutstanding', 0),
-                'market_cap': _target_price * target_info.get('sharesOutstanding', 0) if _use_hist_price else target_info.get('marketCap', 0),
+                'market_cap': target_info.get('marketCap', 0),
                 'enterprise_value': target_info.get('enterpriseValue', 0),
-                'revenue': _t_revenue,
-                'ebitda': _t_ebitda,
-                'net_income': _t_net_income,
+                'revenue': safe_extract(target_financials_yf, 'Total Revenue', target_financials_yf.columns[0]) if 'Total Revenue' in target_financials_yf.index else 0,
+                'ebitda': target_info.get('ebitda', 0),
+                'net_income': safe_extract(target_financials_yf, 'Net Income', target_financials_yf.columns[0]) if 'Net Income' in target_financials_yf.index else 0,
                 'book_value_per_share': target_info.get('bookValue', 0),
-                'total_debt': _t_total_debt,
-                'cash': _t_cash,
+                'total_debt': safe_extract(target_bs, 'Long Term Debt', target_bs.columns[0]) if 'Long Term Debt' in target_bs.index else 0,
+                'cash': safe_extract(target_bs, 'Cash And Cash Equivalents', target_bs.columns[0]) if 'Cash And Cash Equivalents' in target_bs.index else 0,
             }
-
+            
             # Calculate EPS and Book Value - ALWAYS set to avoid KeyError
             if results['target']['shares'] > 0 and results['target']['net_income'] != 0:
                 results['target']['eps'] = results['target']['net_income'] / results['target']['shares']
@@ -3987,42 +3894,28 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                     
                     comp_financials_yf = comp_stock.financials
                     comp_bs = comp_stock.balance_sheet
-
-                    # ── FY-aware column ───────────────────────────────────
-                    _fy_col = _get_fy_financials_col(comp_financials_yf, comp_price_date)
-                    _bs_col = _get_fy_financials_col(comp_bs, comp_price_date)
-                    if _fy_col is not None:
-                        st.caption(f"  ↳ {ticker}: using FY ending {pd.Timestamp(_fy_col).strftime('%b-%Y')} for multiples")
-                    # ─────────────────────────────────────────────────────
                     
-                    # Extract financial data — from FY-matching column
+                    # Extract financial data
                     shares = comp_info.get('sharesOutstanding', 0)
-
-                    # Price: historical on comp_price_date or current
-                    if _use_hist_price:
-                        price = _get_price_at_date(comp_stock, comp_price_date)
-                        if price == 0:
-                            price = comp_info.get('currentPrice', 0) or comp_info.get('regularMarketPrice', 0)
-                    else:
-                        price = comp_info.get('currentPrice', 0)
-                        if not price or price == 0:
-                            price = comp_info.get('regularMarketPrice', 0)
-                        if not price or price == 0:
-                            try:
-                                hist = comp_stock.history(period='1d')
-                                if not hist.empty:
-                                    price = hist['Close'].iloc[-1]
-                            except:
-                                pass
-
-                    market_cap = price * shares if _use_hist_price and shares else comp_info.get('marketCap', 0)
+                    # Robust price fetching - try multiple methods
+                    price = comp_info.get('currentPrice', 0)
+                    if not price or price == 0:
+                        price = comp_info.get('regularMarketPrice', 0)
+                    if not price or price == 0:
+                        try:
+                            hist = comp_stock.history(period='1d')
+                            if not hist.empty:
+                                price = hist['Close'].iloc[-1]
+                        except:
+                            pass
+                    market_cap = comp_info.get('marketCap', 0)
                     
-                    revenue    = safe_extract(comp_financials_yf, 'Total Revenue', _fy_col) if (_fy_col and 'Total Revenue' in comp_financials_yf.index and not comp_financials_yf.empty) else 0
-                    ebitda     = comp_info.get('ebitda', 0)  # fallback to TTM ebitda from info
-                    net_income = safe_extract(comp_financials_yf, 'Net Income', _fy_col) if (_fy_col and 'Net Income' in comp_financials_yf.index and not comp_financials_yf.empty) else 0
+                    revenue = safe_extract(comp_financials_yf, 'Total Revenue', comp_financials_yf.columns[0]) if 'Total Revenue' in comp_financials_yf.index and not comp_financials_yf.empty else 0
+                    ebitda = comp_info.get('ebitda', 0)
+                    net_income = safe_extract(comp_financials_yf, 'Net Income', comp_financials_yf.columns[0]) if 'Net Income' in comp_financials_yf.index and not comp_financials_yf.empty else 0
                     
-                    total_debt = safe_extract(comp_bs, 'Long Term Debt', _bs_col) if (_bs_col and 'Long Term Debt' in comp_bs.index and not comp_bs.empty) else 0
-                    cash       = safe_extract(comp_bs, 'Cash And Cash Equivalents', _bs_col) if (_bs_col and 'Cash And Cash Equivalents' in comp_bs.index and not comp_bs.empty) else 0
+                    total_debt = safe_extract(comp_bs, 'Long Term Debt', comp_bs.columns[0]) if 'Long Term Debt' in comp_bs.index and not comp_bs.empty else 0
+                    cash = safe_extract(comp_bs, 'Cash And Cash Equivalents', comp_bs.columns[0]) if 'Cash And Cash Equivalents' in comp_bs.index and not comp_bs.empty else 0
                     
                     book_value = comp_info.get('bookValue', 0)
                     eps = net_income / shares if shares > 0 else 0
@@ -4086,6 +3979,7 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
         # Calculate implied valuations
         target = results['target']
         valuations_summary = {}
+        _csym = results.get('_currency_symbol', '₹')  # ensure _csym is always defined
         
         # P/E Method
         if 'pe' in results['multiples_stats'] and target['eps'] > 0:
@@ -4105,8 +3999,8 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 'current_price': target['current_price'],
                 'upside_avg': ((fair_value_avg - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
                 'upside_median': ((fair_value_median - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
-                'formula_avg': f"EPS × Avg P/E = ₹{target['eps']:.2f} × {stats['average']:.2f} = ₹{fair_value_avg:.2f}",
-                'formula_median': f"EPS × Median P/E = ₹{target['eps']:.2f} × {stats['median']:.2f} = ₹{fair_value_median:.2f}"
+                'formula_avg': f"EPS × Avg P/E = {_csym}{target['eps']:.2f} × {stats['average']:.2f} = {_csym}{fair_value_avg:.2f}",
+                'formula_median': f"EPS × Median P/E = {_csym}{target['eps']:.2f} × {stats['median']:.2f} = {_csym}{fair_value_median:.2f}"
             }
         
         # P/B Method
@@ -4127,8 +4021,8 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 'current_price': target['current_price'],
                 'upside_avg': ((fair_value_avg - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
                 'upside_median': ((fair_value_median - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
-                'formula_avg': f"BVPS × Avg P/B = ₹{target['book_value_per_share']:.2f} × {stats['average']:.2f} = ₹{fair_value_avg:.2f}",
-                'formula_median': f"BVPS × Median P/B = ₹{target['book_value_per_share']:.2f} × {stats['median']:.2f} = ₹{fair_value_median:.2f}"
+                'formula_avg': f"BVPS × Avg P/B = {_csym}{target['book_value_per_share']:.2f} × {stats['average']:.2f} = {_csym}{fair_value_avg:.2f}",
+                'formula_median': f"BVPS × Median P/B = {_csym}{target['book_value_per_share']:.2f} × {stats['median']:.2f} = {_csym}{fair_value_median:.2f}"
             }
         
         # P/S Method
@@ -4150,8 +4044,8 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 'current_price': target['current_price'],
                 'upside_avg': ((fair_value_avg - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
                 'upside_median': ((fair_value_median - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
-                'formula_avg': f"Revenue/Share × Avg P/S = ₹{revenue_per_share:.2f} × {stats['average']:.2f} = ₹{fair_value_avg:.2f}",
-                'formula_median': f"Revenue/Share × Median P/S = ₹{revenue_per_share:.2f} × {stats['median']:.2f} = ₹{fair_value_median:.2f}"
+                'formula_avg': f"Revenue/Share × Avg P/S = {_csym}{revenue_per_share:.2f} × {stats['average']:.2f} = {_csym}{fair_value_avg:.2f}",
+                'formula_median': f"Revenue/Share × Median P/S = {_csym}{revenue_per_share:.2f} × {stats['median']:.2f} = {_csym}{fair_value_median:.2f}"
             }
         
         # EV/EBITDA Method
@@ -4185,8 +4079,8 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 'current_price': target['current_price'],
                 'upside_avg': ((fair_value_avg - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
                 'upside_median': ((fair_value_median - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
-                'formula_avg': f"(EBITDA × Avg EV/EBITDA - Net Debt) / Shares = (₹{target['ebitda']/1e7:.2f}Cr × {stats['average']:.2f} - ₹{net_debt/1e7:.2f}Cr) / {target['shares']/1e7:.2f}Cr",
-                'formula_median': f"(EBITDA × Median EV/EBITDA - Net Debt) / Shares = (₹{target['ebitda']/1e7:.2f}Cr × {stats['median']:.2f} - ₹{net_debt/1e7:.2f}Cr) / {target['shares']/1e7:.2f}Cr"
+                'formula_avg': f"(EBITDA × Avg EV/EBITDA - Net Debt) / Shares = ({_csym}{target['ebitda']/1e7:.2f}{'Cr' if _csym=='₹' else 'M'} × {stats['average']:.2f} - {_csym}{net_debt/1e7:.2f}{'Cr' if _csym=='₹' else 'M'}) / {target['shares']/1e7:.2f}{'Cr' if _csym=='₹' else 'M'}",
+                'formula_median': f"(EBITDA × Median EV/EBITDA - Net Debt) / Shares = ({_csym}{target['ebitda']/1e7:.2f}{'Cr' if _csym=='₹' else 'M'} × {stats['median']:.2f} - {_csym}{net_debt/1e7:.2f}{'Cr' if _csym=='₹' else 'M'}) / {target['shares']/1e7:.2f}{'Cr' if _csym=='₹' else 'M'}"
             }
         
         # EV/Sales Method
@@ -4218,8 +4112,8 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 'current_price': target['current_price'],
                 'upside_avg': ((fair_value_avg - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
                 'upside_median': ((fair_value_median - target['current_price']) / target['current_price'] * 100) if target['current_price'] else 0,
-                'formula_avg': f"(Revenue × Avg EV/Sales - Net Debt) / Shares = (₹{target['revenue']/1e7:.2f}Cr × {stats['average']:.2f} - ₹{net_debt/1e7:.2f}Cr) / {target['shares']/1e7:.2f}Cr",
-                'formula_median': f"(Revenue × Median EV/Sales - Net Debt) / Shares = (₹{target['revenue']/1e7:.2f}Cr × {stats['median']:.2f} - ₹{net_debt/1e7:.2f}Cr) / {target['shares']/1e7:.2f}Cr"
+                'formula_avg': f"(Revenue × Avg EV/Sales - Net Debt) / Shares = ({_csym}{target['revenue']/1e7:.2f}{'Cr' if _csym=='₹' else 'M'} × {stats['average']:.2f} - {_csym}{net_debt/1e7:.2f}{'Cr' if _csym=='₹' else 'M'}) / {target['shares']/1e7:.2f}{'Cr' if _csym=='₹' else 'M'}",
+                'formula_median': f"(Revenue × Median EV/Sales - Net Debt) / Shares = ({_csym}{target['revenue']/1e7:.2f}{'Cr' if _csym=='₹' else 'M'} × {stats['median']:.2f} - {_csym}{net_debt/1e7:.2f}{'Cr' if _csym=='₹' else 'M'}) / {target['shares']/1e7:.2f}{'Cr' if _csym=='₹' else 'M'}"
             }
         
         results['valuations'] = valuations_summary
@@ -4276,8 +4170,8 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                 'earnings_growth_rate': growth_rate,
                 'fair_value_avg': forward_fair_value_avg,
                 'fair_value_median': forward_fair_value_median,
-                'formula_avg': f"Forward EPS × Avg P/E = ₹{future_eps:.2f} × {stats['average']:.2f} = ₹{forward_fair_value_avg:.2f}",
-                'formula_median': f"Forward EPS × Median P/E = ₹{future_eps:.2f} × {stats['median']:.2f} = ₹{forward_fair_value_median:.2f}",
+                'formula_avg': f"Forward EPS × Avg P/E = {_csym}{future_eps:.2f} × {stats['average']:.2f} = {_csym}{forward_fair_value_avg:.2f}",
+                'formula_median': f"Forward EPS × Median P/E = {_csym}{future_eps:.2f} × {stats['median']:.2f} = {_csym}{forward_fair_value_median:.2f}",
                 'calculation_method': calculation_method,
                 'calculation_note': f"12-Month Forward EPS: {calculation_method}",
                 'using_dcf_projections': bool(projections)
@@ -6021,10 +5915,6 @@ def main():
         st.session_state.show_results_listed = False
     if 'show_results_unlisted' not in st.session_state:
         st.session_state.show_results_unlisted = False
-    if 'fetched_nse_peers' not in st.session_state:
-        st.session_state.fetched_nse_peers = {}
-    if 'fetched_bse_peers' not in st.session_state:
-        st.session_state.fetched_bse_peers = {}
     if 'fetch_status' not in st.session_state:
         st.session_state.fetch_status = {}
     if 'current_ticker' not in st.session_state:
@@ -6201,25 +6091,11 @@ def main():
     
         with col1:
             # Exchange selection for COMPANY BEING VALUED
-            exchange = st.radio(
-                "Company Exchange:",
-                ["NSE", "BSE", "NASDAQ", "NYSE", "SSE"],
-                horizontal=True,
-                help="Select the primary listing exchange for the company being valued. NASDAQ/NYSE tickers need no suffix (e.g. AAPL). SSE uses .SS suffix (e.g. 600519 → 600519.SS)."
-            )
-            exchange_suffix = EXCHANGE_SUFFIX_MAP.get(exchange, "NS")  # fall back to NS
+            exchange = st.radio("Company Exchange:", ["NSE", "BSE"], horizontal=True, help="Select exchange for the company being valued")
+            exchange_suffix = "NS" if exchange == "NSE" else "BO"
         
-            _is_indian_exchange = exchange in INDIAN_EXCHANGES
-
-            ticker_placeholders = {
-                "NSE": "e.g., RELIANCE",
-                "BSE": "e.g., RELIANCE",
-                "NASDAQ": "e.g., AAPL",
-                "NYSE": "e.g., JPM",
-                "SSE": "e.g., 600519",
-            }
             ticker_label = f"Enter {exchange} Ticker:"
-            ticker_placeholder = ticker_placeholders.get(exchange, "e.g., TICKER")
+            ticker_placeholder = "e.g., RELIANCE" if exchange == "NSE" else "e.g., RELIANCE"
             ticker = st.text_input(ticker_label, placeholder=ticker_placeholder)
         
             # Reset analysis state when ticker changes
@@ -6250,12 +6126,7 @@ def main():
                 )
         
             st.markdown("---")
-            if _is_indian_exchange:
-                st.markdown("**📊 Peer Companies (NSE & BSE — for Beta & Relative Valuation)**")
-                st.caption("Beta and peer-relative valuation are restricted to NSE/BSE peers. Comp valuation uses these peers too.")
-            else:
-                st.markdown("**📊 Peer Companies (Worldwide — for Comparative Valuation)**")
-                st.info("ℹ️ Enter bare tickers for NASDAQ/NYSE peers (e.g. MSFT, GOOGL). For Indian peers add suffix: INFY.NS or 500209.BO. For SSE: 600519.SS.")
+            st.markdown("**📊 Peer Companies (Both Exchanges)**")
         
             # Normalize ticker key (remove suffix for consistent storage)
             ticker_key = ticker.replace('.NS', '').replace('.BO', '') if ticker else ""
@@ -6263,166 +6134,123 @@ def main():
             # Initialize session state for fetch status
             if 'fetch_status' not in st.session_state:
                 st.session_state.fetch_status = {}
-            if 'fetched_nse_peers' not in st.session_state:
-                st.session_state.fetched_nse_peers = {}
-            if 'fetched_bse_peers' not in st.session_state:
-                st.session_state.fetched_bse_peers = {}
         
-            # Show last fetch status if available
-            if ticker_key in st.session_state.fetch_status:
-                status = st.session_state.fetch_status[ticker_key]
-                if status['success']:
-                    st.success(f"✅ Last fetch: {status['nse_count']} NSE peers, {status['bse_count']} BSE peers")
-                    with st.expander("👁️ View Peer Details"):
+            # Show current peer state (from widget session state, populated by auto-fetch)
+            _nse_val = st.session_state.get('nse_peers_listed', '')
+            _bse_val = st.session_state.get('bse_peers_listed', '')
+            _ww_val  = st.session_state.get('worldwide_peers_listed', '')
+            if _nse_val or _bse_val or _ww_val:
+                with st.expander("👁️ Last Auto-Fetched Peers"):
+                    if _nse_val:
                         st.markdown("**NSE Peers:**")
-                        # Use text_area to avoid truncation
-                        nse_display = status.get('nse_display', ", ".join(status.get('nse_peers', [])))
-                        if nse_display:
-                            st.text_area("NSE Tickers (comma-separated)", nse_display, height=100, disabled=True, label_visibility="collapsed")
-                        else:
-                            st.info("None")
-                    
+                        st.code(_nse_val)
+                    if _bse_val:
                         st.markdown("**BSE Peers:**")
-                        # Use text_area to avoid truncation
-                        bse_display = status.get('bse_display', ", ".join(status.get('bse_peers', [])))
-                        if bse_display:
-                            st.text_area("BSE Tickers (comma-separated)", bse_display, height=100, disabled=True, label_visibility="collapsed")
-                        else:
-                            st.info("None")
-                else:
-                    st.error(f"❌ Last fetch failed: {status.get('error', 'Unknown error')}")
+                        st.code(_bse_val)
+                    if _ww_val:
+                        st.markdown("**Worldwide Peers:**")
+                        st.code(_ww_val)
         
-            # Auto-fetch peers button
+            # ── Auto-fetch peers button ────────────────────────────────────
+            # KEY FIX: Write directly to the widget's session-state key and
+            # call st.rerun() — same pattern that works in Screener mode.
             if ticker_key:
-                if PEER_FETCHER_AVAILABLE:
-                    if st.button("🔍 Auto-Fetch Peers", help="Fetch industry peers and auto-detect their exchanges"):
-                        with st.spinner("🔍 Fetching and analyzing peers..."):
-                            try:
-                                auto_peers = []
-                            
-                                # Try with the actual ticker as entered (with exchange if provided)
-                                full_ticker = ticker if ('.NS' in ticker or '.BO' in ticker) else f"{ticker_key}.{exchange_suffix}"
-                            
-                                st.info(f"🔍 Fetching peers for: {full_ticker}")
-                            
-                                try:
-                                    auto_peers = get_industry_peers(full_ticker, max_peers=20, exclude_self=True)
-                                except Exception as e:
-                                    st.warning(f"Peer fetcher error: {str(e)}")
-                            
-                                if auto_peers and len(auto_peers) > 0:
-                                    st.success(f"✅ Found {len(auto_peers)} potential peers")
-                                    with st.expander("📋 View fetched peer tickers"):
-                                        st.write(auto_peers)
-                                
-                                    nse_list = []
-                                    bse_list = []
-                                
-                                    # Progress tracking
+                col_btn1, col_btn2 = st.columns([1, 3])
+                with col_btn1:
+                    _fetch_btn = st.button(
+                        "🔍 Auto-Fetch Peers",
+                        key='listed_auto_fetch_peers',
+                        help="Fetch worldwide industry peers from Yahoo Finance",
+                        use_container_width=True,
+                        disabled=not PEER_FETCHER_AVAILABLE
+                    )
+                with col_btn2:
+                    if PEER_FETCHER_AVAILABLE:
+                        st.caption("💡 Fetches worldwide peers; for Indian exchanges also auto-splits into NSE/BSE boxes.")
+                    else:
+                        st.caption("⚠️ utils_peer_fetcher module not found — enter peers manually below.")
+
+                if _fetch_btn and PEER_FETCHER_AVAILABLE:
+                    with st.spinner("🔍 Fetching industry peers from Yahoo Finance..."):
+                        try:
+                            full_ticker = get_ticker_with_exchange(ticker_key, exchange_suffix)
+                            st.info(f"🔍 Searching peers for: {full_ticker}")
+                            auto_peers = get_industry_peers(full_ticker, max_peers=20, exclude_self=True)
+
+                            if auto_peers and len(auto_peers) > 0:
+                                st.success(f"✅ Found {len(auto_peers)} potential peers")
+
+                                if _is_indian_exchange:
+                                    # For NSE/BSE: probe each peer to assign correct exchange
+                                    nse_list, bse_list = [], []
                                     progress_bar = st.progress(0)
                                     status_text = st.empty()
                                     total = len(auto_peers)
-                                
+
                                     for idx, peer in enumerate(auto_peers):
                                         status_text.text(f"Checking {peer}... ({idx+1}/{total})")
                                         progress_bar.progress((idx + 1) / total)
-                                    
-                                        # Add delay between peers to prevent rate limiting
                                         if idx > 0:
-                                            time.sleep(random.uniform(1.5, 2.5))  # Reduced from 2-3s since we have caching
-                                    
-                                        # ALWAYS check BOTH exchanges for each peer
-                                        found_on_nse = False
-                                        found_on_bse = False
-                                    
-                                        # Check NSE first (priority)
+                                            time.sleep(random.uniform(0.8, 1.5))
+
+                                        found_nse = False
                                         try:
-                                            nse_test = get_cached_ticker(f"{peer}.NS")
-                                            nse_info = nse_test.info
-                                            if nse_info and len(nse_info) > 5:
-                                                if any(key in nse_info for key in ['regularMarketPrice', 'currentPrice', 'previousClose']):
-                                                    found_on_nse = True
+                                            _t = get_cached_ticker(f"{peer}.NS")
+                                            _i = _t.info
+                                            if _i and any(k in _i for k in ['regularMarketPrice', 'currentPrice', 'previousClose']):
+                                                found_nse = True
                                         except:
                                             pass
-                                    
-                                        # Only check BSE if NSE not found (optimization)
-                                        if not found_on_nse:
-                                            # Small delay before BSE check
-                                            time.sleep(random.uniform(0.3, 0.7))
-                                        
-                                            # Check BSE
+
+                                        if found_nse:
+                                            nse_list.append(peer)
+                                        else:
+                                            found_bse = False
                                             try:
-                                                bse_test = get_cached_ticker(f"{peer}.BO")
-                                                bse_info = bse_test.info
-                                                if bse_info and len(bse_info) > 5:
-                                                    if any(key in bse_info for key in ['regularMarketPrice', 'currentPrice', 'previousClose']):
-                                                        found_on_bse = True
+                                                time.sleep(random.uniform(0.3, 0.6))
+                                                _t = get_cached_ticker(f"{peer}.BO")
+                                                _i = _t.info
+                                                if _i and any(k in _i for k in ['regularMarketPrice', 'currentPrice', 'previousClose']):
+                                                    found_bse = True
                                             except:
                                                 pass
-                                    
-                                        # NO DUPLICATES - NSE gets priority
-                                        if found_on_nse:
-                                            nse_list.append(peer)
-                                        elif found_on_bse:
-                                            bse_list.append(peer)
-                                        else:
-                                            nse_list.append(peer)
-                                
+                                            if found_bse:
+                                                bse_list.append(peer)
+                                            else:
+                                                nse_list.append(peer)  # default to NSE
+
                                     progress_bar.empty()
                                     status_text.empty()
-                                
-                                    # Store using normalized ticker key
-                                    st.session_state.fetched_nse_peers[ticker_key] = ",".join(nse_list)
-                                    st.session_state.fetched_bse_peers[ticker_key] = ",".join(bse_list)
-                                
-                                    # Store detailed status for display
-                                    st.session_state.fetch_status[ticker_key] = {
-                                        'success': True,
-                                        'nse_count': len(nse_list),
-                                        'bse_count': len(bse_list),
-                                        'nse_peers': nse_list,
-                                        'bse_peers': bse_list,
-                                        'nse_display': ", ".join(nse_list),
-                                        'bse_display': ", ".join(bse_list)
-                                    }
-                                
-                                    # No st.rerun() - let Streamlit handle the update naturally
-                                    st.success(f"✅ Peers fetched successfully! NSE: {len(nse_list)}, BSE: {len(bse_list)}")
-                                    st.info("💡 Peer tickers have been populated below. Click 'Fetch & Analyze' to proceed.")
+
+                                    # Write directly to widget keys → st.rerun() picks them up
+                                    st.session_state['nse_peers_listed'] = ",".join(nse_list)
+                                    st.session_state['bse_peers_listed'] = ",".join(bse_list)
+                                    st.rerun()
+
                                 else:
-                                    st.session_state.fetch_status[ticker_key] = {
-                                        'success': False,
-                                        'error': 'No peers found - company may not have comparable peers or ticker is invalid'
-                                    }
-                                    st.warning("⚠️ No peers found for this ticker")
-                            except Exception as e:
-                                st.session_state.fetch_status[ticker_key] = {
-                                    'success': False,
-                                    'error': str(e)
-                                }
-                                st.error(f"❌ Error: {str(e)}")
-                                import traceback
-                                with st.expander("🔍 Show error details"):
-                                    st.code(traceback.format_exc())
-                else:
-                    st.info("💡 Auto-fetch not available - utils_peer_fetcher module not found. Enter peers manually below.")
-        
-            # Get stored peers using normalized key - this auto-populates the text boxes!
-            stored_nse = st.session_state.fetched_nse_peers.get(ticker_key, "") if ticker_key else ""
-            stored_bse = st.session_state.fetched_bse_peers.get(ticker_key, "") if ticker_key else ""
+                                    # Worldwide mode: peers used as-is (bare tickers for NASDAQ/NYSE)
+                                    # Yahoo Finance peer fetcher returns bare tickers — keep them bare
+                                    st.session_state['worldwide_peers_listed'] = ",".join(auto_peers)
+                                    st.rerun()
+                            else:
+                                st.warning("⚠️ No peers found for this ticker. Enter manually below.")
+                        except Exception as e:
+                            st.error(f"❌ Error fetching peers: {str(e)}")
+                            import traceback
+                            with st.expander("🔍 Show error details"):
+                                st.code(traceback.format_exc())
+            # ── End auto-fetch ─────────────────────────────────────────────
         
             if _is_indian_exchange:
                 # Indian exchange: keep the original NSE/BSE split boxes
                 nse_peers = st.text_input(
                     "NSE Peer Tickers (comma-separated):",
-                    value=stored_nse,
                     placeholder="e.g., TCS, INFY, WIPRO",
                     key='nse_peers_listed',
                     help="🔍 Click Auto-Fetch above to populate automatically, or enter manually"
                 )
                 bse_peers = st.text_input(
                     "BSE Peer Tickers (comma-separated):",
-                    value=stored_bse,
                     placeholder="e.g., SUNPHARMA, TATAMOTORS",
                     key='bse_peers_listed',
                     help="Enter BSE-listed peer companies"
@@ -6527,19 +6355,6 @@ def main():
             if beta_start_date_listed >= beta_end_date_listed:
                 st.error("⚠️ Beta start date must be before end date.")
             # ── End Beta Period ────────────────────────────────────────────
-
-            # ── Comp Valuation Price Date ──────────────────────────────────
-            st.markdown("**📅 Comp Valuation — Price Date**")
-            st.caption(
-                "Price on this date is fetched for every peer. Financials from the FY that contains this date are used to calculate multiples (e.g. if date is 15-Sep-2025, FY Apr-2025→Mar-2026 for Indian companies, or FY Jan-2025→Dec-2025 for calendar-year companies)."
-            )
-            comp_price_date = st.date_input(
-                "Price Date for Comp Multiples",
-                value=datetime.now().date(),
-                key='comp_price_date_listed',
-                help="Leave as today for current prices. Set a past date to value as of that date using the financials for the FY that date falls in."
-            )
-            # ── End Comp Price Date ────────────────────────────────────────
     
         with st.expander("⚙️ Advanced Projection Assumptions - FULL CONTROL"):
             st.info("💡 **Complete Control:** Override ANY projection parameter below. Leave at 0 or blank for auto-calculation from historical data.")
@@ -7905,8 +7720,7 @@ def main():
                             shares, 
                             exchange_suffix, 
                             projections=projections,
-                            use_screener_peers=use_screener_for_peers,
-                            comp_price_date=comp_price_date
+                            use_screener_peers=use_screener_for_peers
                         )
                     except Exception as e:
                         st.warning(f"Could not calculate comparative valuation: {str(e)}")
@@ -8450,13 +8264,16 @@ def main():
                                 comp_results = perform_comparative_valuation(ticker, comp_tickers_listed, financials, shares, exchange_suffix, projections=projections)
                     
                         if comp_results:
+                            # Currency symbol for this exchange
+                            _csym = comp_results.get('_currency_symbol', '₹')
+
                             # Show comparables table
                             st.markdown("### Comparable Companies")
                             comp_df = pd.DataFrame(comp_results['comparables'])
                             if not comp_df.empty:
                                 display_comp_df = comp_df[['ticker', 'name', 'price', 'pe', 'pb', 'ps', 'ev_ebitda', 'ev_sales']]
                                 st.dataframe(display_comp_df.style.format({
-                                    'price': '₹{:.2f}',
+                                    'price': f'{_csym}' + '{:.2f}',
                                     'pe': '{:.2f}x',
                                     'pb': '{:.2f}x',
                                     'ps': '{:.2f}x',
@@ -8486,14 +8303,14 @@ def main():
                                 with col1:
                                     st.markdown("**Using Average Multiple:**")
                                     st.write(val_data['formula_avg'])
-                                    st.metric("Fair Value (Avg)", f"₹{val_data['fair_value_avg']:.2f}", 
+                                    st.metric("Fair Value (Avg)", f"{_csym}{val_data['fair_value_avg']:.2f}", 
                                             f"{val_data['upside_avg']:.1f}%" if val_data['current_price'] else None)
                                     all_avg_values.append(val_data['fair_value_avg'])
                             
                                 with col2:
                                     st.markdown("**Using Median Multiple:**")
                                     st.write(val_data['formula_median'])
-                                    st.metric("Fair Value (Median)", f"₹{val_data['fair_value_median']:.2f}",
+                                    st.metric("Fair Value (Median)", f"{_csym}{val_data['fair_value_median']:.2f}",
                                             f"{val_data['upside_median']:.1f}%" if val_data['current_price'] else None)
                                     all_median_values.append(val_data['fair_value_median'])
                             
@@ -8508,9 +8325,9 @@ def main():
                             
                                 col1, col2, col3 = st.columns(3)
                                 with col1:
-                                    st.metric("Current EPS", f"₹{fpe.get('current_eps', 0):.2f}")
+                                    st.metric("Current EPS", f"{_csym}{fpe.get('current_eps', 0):.2f}")
                                 with col2:
-                                    st.metric("Forward EPS (12M)", f"₹{fpe['forward_eps']:.2f}",
+                                    st.metric("Forward EPS (12M)", f"{_csym}{fpe['forward_eps']:.2f}",
                                             delta=f"{fpe.get('earnings_growth_rate', 0):.1f}%",
                                             help="Projected EPS for next 12 months")
                                 with col3:
@@ -8521,10 +8338,10 @@ def main():
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     st.write(fpe['formula_avg'])
-                                    st.metric("Forward Fair Value (Avg)", f"₹{fpe['fair_value_avg']:.2f}")
+                                    st.metric("Forward Fair Value (Avg)", f"{_csym}{fpe['fair_value_avg']:.2f}")
                                 with col2:
                                     st.write(fpe['formula_median'])
-                                    st.metric("Forward Fair Value (Median)", f"₹{fpe['fair_value_median']:.2f}")
+                                    st.metric("Forward Fair Value (Median)", f"{_csym}{fpe['fair_value_median']:.2f}")
                             
                                 st.markdown("---")
                             # Summary statistics
@@ -8534,18 +8351,18 @@ def main():
                                 col1, col2, col3 = st.columns(3)
                             
                                 with col1:
-                                    st.metric("Average (All Methods)", f"₹{np.mean(all_avg_values):.2f}")
-                                    st.metric("Median (All Methods)", f"₹{np.median(all_median_values):.2f}")
+                                    st.metric("Average (All Methods)", f"{_csym}{np.mean(all_avg_values):.2f}")
+                                    st.metric("Median (All Methods)", f"{_csym}{np.median(all_median_values):.2f}")
                             
                                 with col2:
-                                    st.metric("Min Fair Value", f"₹{min(all_avg_values + all_median_values):.2f}")
-                                    st.metric("Max Fair Value", f"₹{max(all_avg_values + all_median_values):.2f}")
+                                    st.metric("Min Fair Value", f"{_csym}{min(all_avg_values + all_median_values):.2f}")
+                                    st.metric("Max Fair Value", f"{_csym}{max(all_avg_values + all_median_values):.2f}")
                             
                                 with col3:
                                     if valuation['fair_value_per_share'] > 0:
-                                        st.metric("DCF Fair Value", f"₹{valuation['fair_value_per_share']:.2f}")
+                                        st.metric("DCF Fair Value", f"{_csym}{valuation['fair_value_per_share']:.2f}")
                                         combined_avg = (np.mean(all_avg_values) + valuation['fair_value_per_share']) / 2
-                                        st.metric("DCF + Comp Avg", f"₹{combined_avg:.2f}")
+                                        st.metric("DCF + Comp Avg", f"{_csym}{combined_avg:.2f}")
                         
                             # VISUAL ANALYSIS - CHARTS
                             st.markdown("---")
@@ -8575,10 +8392,13 @@ def main():
                             
                                 # Chart 2: Financial Metrics
                                 fig2 = go.Figure()
-                                fig2.add_trace(go.Bar(name='Revenue', x=comp_df_charts['name'], y=comp_df_charts['revenue']/1e7, marker_color='steelblue'))
-                                fig2.add_trace(go.Bar(name='EBITDA', x=comp_df_charts['name'], y=comp_df_charts['ebitda']/1e7, marker_color='lightcoral'))
-                                fig2.add_trace(go.Bar(name='Net Income', x=comp_df_charts['name'], y=comp_df_charts['net_income']/1e7, marker_color='mediumseagreen'))
-                                fig2.update_layout(title="Financial Metrics (₹ Crores)", barmode='group', height=500, xaxis_tickangle=-45)
+                                # Use local currency label for chart
+                                _fin_unit = "Crores" if _csym == '₹' else "Millions"
+                                _fin_div  = 1e7 if _csym == '₹' else 1e6
+                                fig2.add_trace(go.Bar(name='Revenue', x=comp_df_charts['name'], y=comp_df_charts['revenue']/_fin_div, marker_color='steelblue'))
+                                fig2.add_trace(go.Bar(name='EBITDA', x=comp_df_charts['name'], y=comp_df_charts['ebitda']/_fin_div, marker_color='lightcoral'))
+                                fig2.add_trace(go.Bar(name='Net Income', x=comp_df_charts['name'], y=comp_df_charts['net_income']/_fin_div, marker_color='mediumseagreen'))
+                                fig2.update_layout(title=f"Financial Metrics ({_csym} {_fin_unit})", barmode='group', height=500, xaxis_tickangle=-45)
                                 st.plotly_chart(fig2, use_container_width=True)
                             
                                 # Chart 3: Implied Valuations
@@ -8593,7 +8413,7 @@ def main():
                                         fig3.add_hline(y=comp_results['target']['current_price'], line_dash="dash", line_color="green", annotation_text="Current")
                                     if valuation.get('fair_value_per_share', 0) > 0:
                                         fig3.add_hline(y=valuation['fair_value_per_share'], line_dash="dot", line_color="purple", annotation_text="DCF")
-                                    fig3.update_layout(title="Implied Valuations", barmode='group', yaxis_title="Price (₹)", height=500)
+                                    fig3.update_layout(title="Implied Valuations", barmode='group', yaxis_title=f"Price ({_csym})", height=500)
                                     st.plotly_chart(fig3, use_container_width=True)
                 
                     else:
