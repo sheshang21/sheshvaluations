@@ -7670,7 +7670,10 @@ def main():
                 except Exception as e:
                     st.warning(f"Could not fetch current price: {e}")
                     current_price = 0
-                
+
+                # Derive currency symbol from Yahoo Finance info (e.g. $ for GEV/TSLA, ₹ for Indian stocks)
+                _ticker_csym = get_currency_symbol(info if 'info' in dir() else None)
+
                 # ================================
                 # ADDITIONAL VALUATION MODELS FOR NON-BANKING COMPANIES
                 # ================================
@@ -8107,7 +8110,7 @@ def main():
                     format_dict = {col: '{:.4f}' for col in numeric_cols}
                     st.dataframe(fcff_df.style.format(format_dict), use_container_width=True)
                 
-                    st.metric("Sum of PV(FCFF)", f"₹ {valuation['sum_pv_fcff']:.2f} Lacs")
+                    st.metric("Sum of PV(FCFF)", f"{_ticker_csym} {valuation['sum_pv_fcff']:.2f} Lacs")
                 
                 with tab4:
                     st.subheader("🎯 WACC Calculation & Breakdown")
@@ -8130,8 +8133,8 @@ def main():
                 
                     with col2:
                         st.markdown("**Cost of Debt (Kd)**")
-                        st.write(f"Interest Expense: **₹ {financials['interest'][0]:.2f} Lacs**")
-                        st.write(f"Total Debt: **₹ {wacc_details['debt']:.2f} Lacs**")
+                        st.write(f"Interest Expense: **{_ticker_csym} {financials['interest'][0]:.2f} Lacs**")
+                        st.write(f"Total Debt: **{_ticker_csym} {wacc_details['debt']:.2f} Lacs**")
                         st.write(f"Kd (pre-tax) = {wacc_details['kd']:.2f}%")
                         st.write(f"Tax Rate = {tax_rate}%")
                         st.write(f"**Kd (after-tax) = {wacc_details['kd_after_tax']:.2f}%**")
@@ -8141,9 +8144,9 @@ def main():
                 
                     col3, col4 = st.columns(2)
                     with col3:
-                        st.write(f"Equity (E): **₹ {wacc_details['equity']:.2f} Lacs** ({wacc_details['we']:.2f}%)")
-                        st.write(f"Debt (D): **₹ {wacc_details['debt']:.2f} Lacs** ({wacc_details['wd']:.2f}%)")
-                        st.write(f"Total Capital (V): **₹ {wacc_details['equity'] + wacc_details['debt']:.2f} Lacs**")
+                        st.write(f"Equity (E): **{_ticker_csym} {wacc_details['equity']:.2f} Lacs** ({wacc_details['we']:.2f}%)")
+                        st.write(f"Debt (D): **{_ticker_csym} {wacc_details['debt']:.2f} Lacs** ({wacc_details['wd']:.2f}%)")
+                        st.write(f"Total Capital (V): **{_ticker_csym} {wacc_details['equity'] + wacc_details['debt']:.2f} Lacs**")
                 
                     with col4:
                         st.write(f"WACC = (E/V × Ke) + (D/V × Kd × (1-Tax))")
@@ -8158,8 +8161,8 @@ def main():
                         st.warning("⚠️ **FCFF Adjustment Applied**")
                         adj_details = valuation.get('adjustment_details', {})
                         st.write(f"**Strategy Used:** {adj_details.get('strategy', 'N/A')}")
-                        st.write(f"**Original Terminal FCFF:** ₹{projections['fcff'][-1]:.2f} Lacs")
-                        st.write(f"**Adjusted Terminal FCFF:** ₹{valuation['adjusted_terminal_fcff']:.2f} Lacs")
+                        st.write(f"**Original Terminal FCFF:** {_ticker_csym}{projections['fcff'][-1]:.2f} Lacs")
+                        st.write(f"**Adjusted Terminal FCFF:** {_ticker_csym}{valuation['adjusted_terminal_fcff']:.2f} Lacs")
                         st.caption("📌 Adjustment details shown during valuation run above")
                         st.markdown("---")
                 
@@ -8171,21 +8174,21 @@ def main():
                     # Use adjusted FCFF if available
                     terminal_fcff = valuation.get('adjusted_terminal_fcff', projections['fcff'][-1])
                 
-                    st.write(f"FCFF (Year {projection_years_listed}): **₹ {terminal_fcff:.2f} Lacs**")
+                    st.write(f"FCFF (Year {projection_years_listed}): **{_ticker_csym} {terminal_fcff:.2f} Lacs**")
                     if valuation.get('fcff_adjusted', False):
-                        st.caption(f"(Original: ₹{projections['fcff'][-1]:.2f} Lacs - Adjusted for sustainability)")
+                        st.caption(f"(Original: {_ticker_csym}{projections['fcff'][-1]:.2f} Lacs - Adjusted for sustainability)")
                 
                     st.write(f"Terminal Growth Rate (g): **{terminal_growth}%**")
                     st.write(f"FCFF (Year {projection_years_listed + 1}) = FCFF{projection_years_listed} × (1 + g)")
-                    st.write(f"FCFF (Year {projection_years_listed + 1}) = ₹ {terminal_fcff:.2f} × (1 + {terminal_growth/100})")
-                    st.write(f"FCFF (Year {projection_years_listed + 1}) = **₹ {terminal_fcff * (1 + terminal_growth/100):.2f} Lacs**")
+                    st.write(f"FCFF (Year {projection_years_listed + 1}) = {_ticker_csym} {terminal_fcff:.2f} × (1 + {terminal_growth/100})")
+                    st.write(f"FCFF (Year {projection_years_listed + 1}) = **{_ticker_csym} {terminal_fcff * (1 + terminal_growth/100):.2f} Lacs**")
                 
                     st.write(f"\nTerminal Value = FCFF{projection_years_listed + 1} / (WACC - g)")
-                    st.write(f"Terminal Value = ₹ {projections['fcff'][-1] * (1 + terminal_growth/100):.2f} / ({wacc_details['wacc']:.2f}% - {terminal_growth}%)")
-                    st.write(f"**Terminal Value = ₹ {valuation['terminal_value']:.2f} Lacs**")
+                    st.write(f"Terminal Value = {_ticker_csym} {projections['fcff'][-1] * (1 + terminal_growth/100):.2f} / ({wacc_details['wacc']:.2f}% - {terminal_growth}%)")
+                    st.write(f"**Terminal Value = {_ticker_csym} {valuation['terminal_value']:.2f} Lacs**")
                 
                     st.write(f"\nPV(Terminal Value) = TV / (1 + WACC)^{projection_years_listed}")
-                    st.write(f"**PV(Terminal Value) = ₹ {valuation['pv_terminal_value']:.2f} Lacs**")
+                    st.write(f"**PV(Terminal Value) = {_ticker_csym} {valuation['pv_terminal_value']:.2f} Lacs**")
                 
                     st.markdown("---")
                     st.markdown("### Enterprise Value")
@@ -8193,17 +8196,18 @@ def main():
                     # Show growth phase adjustment if applied
                     if valuation.get('growth_phase_adjusted', False):
                         st.info("📊 **Growth-Phase Company:** Sum of PV(FCFF) was adjusted from negative to zero")
-                        st.caption(f"Original: ₹{valuation['original_sum_pv_fcff']:.2f} Lacs → Adjusted: ₹{valuation['sum_pv_fcff']:.2f} Lacs")
+                        st.caption(f"Original: {_ticker_csym}{valuation['original_sum_pv_fcff']:.2f} Lacs → Adjusted: {_ticker_csym}{valuation['sum_pv_fcff']:.2f} Lacs")
                 
+                    _ev_col_label = f'Value ({_ticker_csym} Lacs)'
                     ev_df = pd.DataFrame({
                         'Component': ['Sum of PV(FCFF)', 'PV(Terminal Value)', 'Enterprise Value'],
-                        'Value (₹ Lacs)': [
+                        _ev_col_label: [
                             valuation['sum_pv_fcff'],
                             valuation['pv_terminal_value'],
                             valuation['enterprise_value']
                         ]
                     })
-                    st.dataframe(ev_df.style.format({'Value (₹ Lacs)': '{:.2f}'}), use_container_width=True)
+                    st.dataframe(ev_df.style.format({_ev_col_label: '{:.2f}'}), use_container_width=True)
                 
                     tv_pct = valuation['tv_percentage']
                     if tv_pct > 90:
@@ -8215,21 +8219,21 @@ def main():
                     st.markdown("### Equity Value & Fair Value per Share")
                 
                     equity_calc_df = pd.DataFrame({
-                        'Item': ['Enterprise Value', 'Less: Total Debt', 'Add: Cash & Equivalents', '= Net Debt', 'Equity Value', 'Equity Value (₹)', 'Number of Shares', 'Fair Value per Share'],
+                        'Item': ['Enterprise Value', 'Less: Total Debt', 'Add: Cash & Equivalents', '= Net Debt', 'Equity Value', f'Equity Value ({_ticker_csym})', 'Number of Shares', 'Fair Value per Share'],
                         'Value': [
-                            f"₹ {valuation['enterprise_value']:.2f} Lacs",
-                            f"₹ {valuation['total_debt']:.2f} Lacs",
-                            f"₹ {valuation['cash']:.2f} Lacs",
-                            f"₹ {valuation['net_debt']:.2f} Lacs",
-                            f"₹ {valuation['equity_value']:.2f} Lacs",
-                            f"₹ {valuation['equity_value_rupees']:,.0f}",
+                            f"{_ticker_csym} {valuation['enterprise_value']:.2f} Lacs",
+                            f"{_ticker_csym} {valuation['total_debt']:.2f} Lacs",
+                            f"{_ticker_csym} {valuation['cash']:.2f} Lacs",
+                            f"{_ticker_csym} {valuation['net_debt']:.2f} Lacs",
+                            f"{_ticker_csym} {valuation['equity_value']:.2f} Lacs",
+                            f"{_ticker_csym} {valuation['equity_value_rupees']:,.0f}",
                             f"{shares:,}" if 'shares' in locals() else f"{num_shares:,}",
-                            f"₹ {valuation['fair_value_per_share']:.2f}"
+                            f"{_ticker_csym} {valuation['fair_value_per_share']:.2f}"
                         ]
                     })
                     st.table(equity_calc_df)
                 
-                    st.success(f"### 🎯 Fair Value per Share (DCF): ₹ {valuation['fair_value_per_share']:.2f}")
+                    st.success(f"### 🎯 Fair Value per Share (DCF): {_ticker_csym} {valuation['fair_value_per_share']:.2f}")
                 
                     # Show all valuation methods if available
                     if (ddm_result and ddm_result.get('value_per_share', 0) > 0) or (rim_result and rim_result.get('value_per_share', 0) > 0):
@@ -8248,7 +8252,7 @@ def main():
                     
                         # Create comparison table
                         methods_df = pd.DataFrame(all_methods, columns=['Method', 'Fair Value'])
-                        methods_df['Fair Value'] = methods_df['Fair Value'].apply(lambda x: f"₹{x:.2f}")
+                        methods_df['Fair Value'] = methods_df['Fair Value'].apply(lambda x: f"{_ticker_csym}{x:.2f}")
                         methods_df['Upside/Downside'] = [
                             f"{((v - current_price) / current_price * 100):.1f}%" if current_price > 0 else "N/A"
                             for _, v in all_methods
@@ -8257,7 +8261,7 @@ def main():
                         st.dataframe(methods_df, use_container_width=True, hide_index=True)
                     
                         avg_all = np.mean([v for _, v in all_methods])
-                        st.info(f"📊 **Average Fair Value (All Methods):** ₹{avg_all:.2f}")
+                        st.info(f"📊 **Average Fair Value (All Methods):** {_ticker_csym}{avg_all:.2f}")
                     
                         if current_price > 0:
                             upside_avg = ((avg_all - current_price) / current_price * 100)
