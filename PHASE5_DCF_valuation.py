@@ -2859,82 +2859,89 @@ def extract_financials_listed(yahoo_data, num_years=3):
         st.error(traceback.format_exc())
         return None
 
-def get_stock_beta(ticker, market_ticker=None, period_years=3):
-    """Calculate beta using regression of stock returns vs market returns
+def get_stock_beta(ticker, market_ticker=None, period_years=3,
+                   beta_start_date=None, beta_end_date=None):
+    """Calculate beta using daily return regression of stock vs market.
+
+    Date priority:
+        beta_start_date / beta_end_date  →  explicit window (user-chosen)
+        period_years                     →  fallback rolling window
     
-    Automatically determines market index:
-    - NSE (.NS) -> NIFTY (^NSEI)
-    - BSE (.BO) -> SENSEX (^BSESN)
+    Market index auto-selection:
+        NSE (.NS)  →  NIFTY 50  (^NSEI)
+        BSE (.BO)  →  SENSEX    (^BSESN)
+    
+    Returns: float beta (clamped 0.1 – 3.0)
     """
     try:
-        # Handle None or empty ticker
-        if not ticker or ticker is None:
-            st.warning(f"⚠️ Invalid ticker provided - using default β=1.0")
+        if not ticker:
+            st.warning("⚠️ Invalid ticker provided — using default β=1.0")
             return 1.0
-        
-        # Ensure ticker has exchange suffix
+
+        # Ensure exchange suffix
         if '.NS' not in ticker and '.BO' not in ticker:
-            # No suffix, assume NSE
             ticker = ticker + '.NS'
-        
-        # Determine market index based on ticker suffix
+
+        # Auto-select market index
         if market_ticker is None:
-            if '.NS' in ticker:
-                market_ticker = '^NSEI'  # NIFTY 50 for NSE
-            elif '.BO' in ticker:
-                market_ticker = '^BSESN'  # SENSEX for BSE
-            else:
-                market_ticker = '^BSESN'  # Default to SENSEX
-        
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=period_years*365)
-        
-        # Use Ticker.history() to avoid yf.download() progress kwarg conflict in newer yfinance
-        stock_obj = yf.Ticker(ticker)
+            market_ticker = '^NSEI' if '.NS' in ticker else '^BSESN'
+
+        # ── Date window ───────────────────────────────────────────────────
+        if beta_start_date is not None and beta_end_date is not None:
+            start_date = pd.Timestamp(beta_start_date)
+            end_date   = pd.Timestamp(beta_end_date)
+        else:
+            end_date   = pd.Timestamp(datetime.now())
+            start_date = end_date - pd.DateOffset(years=period_years)
+
+        # ── Fetch daily OHLCV ─────────────────────────────────────────────
+        stock_obj  = yf.Ticker(ticker)
         market_obj = yf.Ticker(market_ticker)
-        
-        stock = stock_obj.history(start=start_date, end=end_date, period=None)
+
+        stock  = stock_obj.history(start=start_date, end=end_date, period=None)
         market = market_obj.history(start=start_date, end=end_date, period=None)
-        
-        # Flatten MultiIndex columns if present (yfinance >= 0.2.x may return them)
+
+        # Flatten MultiIndex if present (yfinance ≥ 0.2.x)
         if isinstance(stock.columns, pd.MultiIndex):
             stock.columns = stock.columns.get_level_values(0)
         if isinstance(market.columns, pd.MultiIndex):
             market.columns = market.columns.get_level_values(0)
-        
+
         if stock.empty or market.empty:
-            st.warning(f"⚠️ No data for {ticker} - using default β=1.0")
+            st.warning(f"⚠️ No price data for {ticker} in chosen period — using β=1.0")
             return 1.0
-        
-        # Calculate returns
-        stock_returns = stock['Close'].pct_change().dropna()
+
+        # ── Daily returns (pct_change = day-over-day) ─────────────────────
+        stock_returns  = stock['Close'].pct_change().dropna()
         market_returns = market['Close'].pct_change().dropna()
-        
-        # Align data
-        aligned = pd.concat([stock_returns, market_returns], axis=1, join='inner')
+
+        # Align on common trading days
+        aligned = pd.concat([stock_returns, market_returns], axis=1, join='inner').dropna()
         aligned.columns = ['stock', 'market']
-        aligned = aligned.dropna()
-        
-        if len(aligned) < 2:
-            st.warning(f"⚠️ Insufficient data for {ticker} - using default β=1.0")
+
+        n_obs = len(aligned)
+        if n_obs < 20:
+            st.warning(f"⚠️ Only {n_obs} overlapping trading days for {ticker} — using β=1.0")
             return 1.0
-        
-        # Calculate beta using covariance method
-        covariance = aligned['stock'].cov(aligned['market'])
-        market_variance = aligned['market'].var()
-        
-        if market_variance == 0:
+
+        # ── OLS β = Cov(Rs, Rm) / Var(Rm) ───────────────────────────────
+        cov    = aligned['stock'].cov(aligned['market'])
+        var_m  = aligned['market'].var()
+
+        if var_m == 0:
             return 1.0
-        
-        beta = covariance / market_variance
-        
-        # Display which index was used
+
+        beta = cov / var_m
+
+        # Caption for transparency
         index_name = "NIFTY 50" if market_ticker == '^NSEI' else "SENSEX"
-        st.caption(f"   (vs {index_name})")
-        
-        # Clamp between 0.1 and 3.0
+        st.caption(
+            f"   β vs {index_name} | {n_obs} daily obs "
+            f"({aligned.index[0].strftime('%d-%b-%Y')} → {aligned.index[-1].strftime('%d-%b-%Y')})"
+        )
+
         return max(0.1, min(beta, 3.0))
-        
+
     except Exception as e:
         st.warning(f"Could not calculate beta for {ticker}: {str(e)}")
         return 1.0
@@ -4918,7 +4925,8 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         'avg_capex_ratio': avg_capex_ratio
     }
 
-def calculate_peer_unlevered_beta(peer_tickers, target_financials, tax_rate, period_years=3):
+def calculate_peer_unlevered_beta(peer_tickers, target_financials, tax_rate, period_years=3,
+                                   beta_start_date=None, beta_end_date=None):
     """
     Hamada-equation beta pipeline:
       1. Fetch 3-year raw (levered) beta for every comp ticker.
@@ -4963,7 +4971,9 @@ def calculate_peer_unlevered_beta(peer_tickers, target_financials, tax_rate, per
                 time.sleep(random.uniform(0.5, 1.0))
 
             # ── Step 1: raw (levered) beta via regression ─────────────────
-            raw_beta = get_stock_beta(ticker, period_years=period_years)
+            raw_beta = get_stock_beta(ticker, period_years=period_years,
+                                       beta_start_date=beta_start_date,
+                                       beta_end_date=beta_end_date)
             if raw_beta <= 0:
                 st.caption(f"   ↳ {ticker}: skipped (invalid beta {raw_beta:.3f})")
                 continue
@@ -5053,7 +5063,8 @@ def calculate_peer_unlevered_beta(peer_tickers, target_financials, tax_rate, per
     }
 
 
-def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None, manual_rm_rate=None):
+def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None, manual_rm_rate=None,
+                   beta_start_date=None, beta_end_date=None):
     """Calculate WACC with proper beta calculation from peers"""
     # Cost of Equity (Ke)
     # ALWAYS use manual rates (passed from session state), never fetch
@@ -5065,14 +5076,17 @@ def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None,
     beta_details = {}
     if peer_tickers and peer_tickers.strip():
         st.markdown("#### 🔢 Beta Calculation (Hamada Unlevering / Relevering)")
+        if beta_start_date and beta_end_date:
+            _bd_label = f"{pd.Timestamp(beta_start_date).strftime('%d-%b-%Y')} → {pd.Timestamp(beta_end_date).strftime('%d-%b-%Y')}"
+        else:
+            _bd_label = "3-year rolling window (default)"
         st.caption(
-            "Step 1: compute 3-yr regression β for each comp. "
-            "Step 2: unlever using each peer's D/E. "
-            "Step 3: average unlevered βs. "
-            "Step 4: relever using target company's D/E."
+            f"Beta window: {_bd_label} | Daily returns | "
+            "Unlever each peer β (Hamada) → average → relever to target D/E."
         )
         beta_result = calculate_peer_unlevered_beta(
-            peer_tickers, financials, tax_rate, period_years=3
+            peer_tickers, financials, tax_rate, period_years=3,
+            beta_start_date=beta_start_date, beta_end_date=beta_end_date
         )
         beta         = beta_result['relevered_beta']
         beta_details = beta_result
@@ -5144,7 +5158,8 @@ def calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=None,
         'beta_details': beta_details,
     }
 
-def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=None, manual_rm_rate=None):
+def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=None, manual_rm_rate=None,
+                        beta_start_date=None, beta_end_date=None):
     """
     Calculate WACC for BANKS/NBFCs with proper Cost of Funds methodology
     
@@ -5164,12 +5179,17 @@ def calculate_wacc_bank(financials, tax_rate, peer_tickers=None, manual_rf_rate=
     beta_details = {}
     if peer_tickers and peer_tickers.strip():
         st.markdown("#### 🔢 Beta Calculation (Hamada Unlevering / Relevering) — Bank Mode")
+        if beta_start_date and beta_end_date:
+            _bd_label = f"{pd.Timestamp(beta_start_date).strftime('%d-%b-%Y')} → {pd.Timestamp(beta_end_date).strftime('%d-%b-%Y')}"
+        else:
+            _bd_label = "3-year rolling window (default)"
         st.caption(
-            "Unlevering peer betas then relevering to target bank's own D/E. "
-            "For banks the 'equity' denominator uses book equity from the balance sheet."
+            f"Beta window: {_bd_label} | Daily returns | "
+            "Unlevering peer betas then relevering to target bank's own D/E."
         )
         beta_result = calculate_peer_unlevered_beta(
-            peer_tickers, financials, tax_rate, period_years=3
+            peer_tickers, financials, tax_rate, period_years=3,
+            beta_start_date=beta_start_date, beta_end_date=beta_end_date
         )
         beta         = beta_result['relevered_beta']
         beta_details = beta_result
@@ -6315,6 +6335,28 @@ def main():
             )
             if manual_discount_rate > 0:
                 st.info(f"💡 Using manual discount rate: {manual_discount_rate:.2f}% (Overriding WACC)")
+
+            # ── Beta Calculation Period ────────────────────────────────────
+            st.markdown("**📅 Beta Calculation Period**")
+            st.caption("Daily returns only. Defaults to 3 years ending today if left unchanged.")
+            _beta_default_end_listed   = datetime.now().date()
+            _beta_default_start_listed = (_beta_default_end_listed.replace(year=_beta_default_end_listed.year - 3))
+            _bc1, _bc2 = st.columns(2)
+            with _bc1:
+                beta_start_date_listed = st.date_input(
+                    "From", value=_beta_default_start_listed,
+                    key='beta_start_listed',
+                    help="Start date for beta regression window"
+                )
+            with _bc2:
+                beta_end_date_listed = st.date_input(
+                    "To", value=_beta_default_end_listed,
+                    key='beta_end_listed',
+                    help="End date for beta regression window"
+                )
+            if beta_start_date_listed >= beta_end_date_listed:
+                st.error("⚠️ Beta start date must be before end date.")
+            # ── End Beta Period ────────────────────────────────────────────
     
         with st.expander("⚙️ Advanced Projection Assumptions - FULL CONTROL"):
             st.info("💡 **Complete Control:** Override ANY projection parameter below. Leave at 0 or blank for auto-calculation from historical data.")
@@ -6864,8 +6906,10 @@ def main():
                     current_price = info.get('currentPrice', 0) if info else 0
                 
                     # Calculate Ke for bank valuations
-                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate)
-                    beta = get_stock_beta(get_ticker_with_exchange(ticker, exchange_suffix), period_years=3)
+                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate,
+                                                  beta_start_date=beta_start_date_listed, beta_end_date=beta_end_date_listed)
+                    beta = get_stock_beta(get_ticker_with_exchange(ticker, exchange_suffix), period_years=3,
+                                         beta_start_date=beta_start_date_listed, beta_end_date=beta_end_date_listed)
                     wacc_details['beta'] = beta
                     wacc_details['ke'] = wacc_details['rf'] + (beta * (wacc_details['rm'] - wacc_details['rf']))
                 
@@ -6920,7 +6964,9 @@ def main():
                             
                                 # Get Ke (Cost of Equity) - NOT WACC!
                                 # Calculate using CAPM
-                                wacc_details_temp = calculate_wacc(financials, tax_rate, peer_tickers=comp_tickers_listed)
+                                wacc_details_temp = calculate_wacc(financials, tax_rate, peer_tickers=comp_tickers_listed,
+                                                                   beta_start_date=beta_start_date_listed,
+                                                                   beta_end_date=beta_end_date_listed)
                                 ke = wacc_details_temp['ke']  # Use only Ke, ignore WACC
                             
                                 st.info(f"💡 Using **Ke = {ke:.2f}%** (NOT WACC - banks use equity DCF)")
@@ -7525,11 +7571,16 @@ def main():
                 st.info("Calculating beta for the stock...")
                 # Pass ticker WITH exchange suffix for proper beta calculation
                 full_ticker = get_ticker_with_exchange(ticker, exchange_suffix)
-                beta = get_stock_beta(full_ticker, period_years=3)
+                beta = get_stock_beta(full_ticker, period_years=3,
+                                      beta_start_date=beta_start_date_listed,
+                                      beta_end_date=beta_end_date_listed)
                 st.success(f"✅ Beta calculated: {beta:.3f}")
                 
                 st.info(f"🏛️ Risk-Free Rate (India 10Y G-Sec): {manual_rf_rate:.2f}%")
-                wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate)
+                wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None,
+                                              manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate,
+                                              beta_start_date=beta_start_date_listed,
+                                              beta_end_date=beta_end_date_listed)
                 wacc_details['beta'] = beta  # Override with actual stock beta
                 # Recalculate Ke and WACC with actual beta
                 wacc_details['ke'] = wacc_details['rf'] + (beta * (wacc_details['rm'] - wacc_details['rf']))
@@ -9436,6 +9487,28 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             if manual_discount_rate_unlisted > 0:
                 st.info(f"💡 Using manual discount rate: {manual_discount_rate_unlisted:.2f}% (Overriding WACC)")
             
+            # ── Beta Calculation Period ────────────────────────────────────
+            st.markdown("**📅 Beta Calculation Period**")
+            st.caption("Daily returns only. Defaults to 3 years ending today if left unchanged.")
+            _beta_default_end_unlisted   = datetime.now().date()
+            _beta_default_start_unlisted = (_beta_default_end_unlisted.replace(year=_beta_default_end_unlisted.year - 3))
+            _uc1, _uc2 = st.columns(2)
+            with _uc1:
+                beta_start_date_unlisted = st.date_input(
+                    "From", value=_beta_default_start_unlisted,
+                    key='beta_start_unlisted',
+                    help="Start date for beta regression window"
+                )
+            with _uc2:
+                beta_end_date_unlisted = st.date_input(
+                    "To", value=_beta_default_end_unlisted,
+                    key='beta_end_unlisted',
+                    help="End date for beta regression window"
+                )
+            if beta_start_date_unlisted >= beta_end_date_unlisted:
+                st.error("⚠️ Beta start date must be before end date.")
+            # ── End Beta Period ────────────────────────────────────────────
+
             # Valuation models to run (RIM only, no DDM for unlisted)
             st.markdown("**🎯 Valuation Models**")
             run_dcf_unlisted = st.checkbox("DCF (FCFF)", value=True, key='unlisted_dcf')
@@ -9746,7 +9819,8 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     )
                 
                     # Calculate WACC (unlisted companies use auto-fetched risk-free rate)
-                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=peer_tickers, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate)
+                    wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=peer_tickers, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate,
+                                                  beta_start_date=beta_start_date_unlisted, beta_end_date=beta_end_date_unlisted)
                 
                     # DCF Valuation
                     # Extract cash balance
@@ -10694,6 +10768,28 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
             if manual_discount_rate_screener > 0:
                 st.info(f"💡 Using manual discount rate: {manual_discount_rate_screener:.2f}% (Overriding WACC)")
             
+            # ── Beta Calculation Period ────────────────────────────────────
+            st.markdown("**📅 Beta Calculation Period**")
+            st.caption("Daily returns only. Defaults to 3 years ending today if left unchanged.")
+            _beta_default_end_screener   = datetime.now().date()
+            _beta_default_start_screener = (_beta_default_end_screener.replace(year=_beta_default_end_screener.year - 3))
+            _sc1, _sc2 = st.columns(2)
+            with _sc1:
+                beta_start_date_screener = st.date_input(
+                    "From", value=_beta_default_start_screener,
+                    key='beta_start_screener',
+                    help="Start date for beta regression window"
+                )
+            with _sc2:
+                beta_end_date_screener = st.date_input(
+                    "To", value=_beta_default_end_screener,
+                    key='beta_end_screener',
+                    help="End date for beta regression window"
+                )
+            if beta_start_date_screener >= beta_end_date_screener:
+                st.error("⚠️ Beta start date must be before end date.")
+            # ── End Beta Period ────────────────────────────────────────────
+
             # Valuation models to run
             st.markdown("**🎯 Valuation Models**")
             run_dcf_screener = st.checkbox("DCF (FCFF)", value=True, key='screener_dcf')
@@ -11170,7 +11266,8 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         )
                         
                         # Calculate WACC (using peer companies for beta)
-                        wacc_details = calculate_wacc(financials_screener, tax_rate_screener / 100, peer_tickers=peer_tickers_screener, manual_rf_rate=manual_rf_rate_screener, manual_rm_rate=manual_rm_rate_screener)
+                        wacc_details = calculate_wacc(financials_screener, tax_rate_screener / 100, peer_tickers=peer_tickers_screener, manual_rf_rate=manual_rf_rate_screener, manual_rm_rate=manual_rm_rate_screener,
+                                                      beta_start_date=beta_start_date_screener, beta_end_date=beta_end_date_screener)
                         
                         # Display risk-free rate being used
                         st.info(f"🏛️ Risk-Free Rate (India 10Y G-Sec): {manual_rf_rate_screener:.2f}%")
