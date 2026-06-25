@@ -4491,6 +4491,9 @@ def project_financials_bank(financials, years, tax_rate, car_ratio=14.0, rwa_per
 
 def project_financials(financials, wc_metrics, years, tax_rate, 
                       rev_growth_override, opex_margin_override, capex_ratio_override=None,
+                      # PER-YEAR overrides (lists of length == years, index 0 = Year 1)
+                      rev_growth_per_year=None,   # list[float] | None
+                      ebitda_margin_per_year=None, # list[float] | None
                       # NEW PARAMETERS - Complete user control
                       ebitda_margin_override=None,
                       depreciation_rate_override=None,
@@ -4718,7 +4721,13 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         # ============================================
         # REVENUE PROJECTION
         # ============================================
-        projected_revenue = last_revenue * (1 + avg_growth / 100)
+        # Per-year growth takes priority → single override → auto CAGR
+        year_idx = year - 1  # 0-based index
+        if rev_growth_per_year and year_idx < len(rev_growth_per_year) and rev_growth_per_year[year_idx] > 0:
+            year_growth = rev_growth_per_year[year_idx]
+        else:
+            year_growth = avg_growth
+        projected_revenue = last_revenue * (1 + year_growth / 100)
         
         # ============================================
         # P&L PROJECTIONS
@@ -4727,13 +4736,20 @@ def project_financials(financials, wc_metrics, years, tax_rate,
         projected_opex = projected_revenue * (avg_opex_margin / 100)
         projected_ebitda = projected_revenue - projected_cogs - projected_opex
         
-        # USER OVERRIDE: EBITDA margin directly overrides the derived EBITDA
-        if ebitda_margin_override:
+        # Per-year EBITDA margin takes priority → single override → derived
+        if ebitda_margin_per_year and year_idx < len(ebitda_margin_per_year) and ebitda_margin_per_year[year_idx] > 0:
+            projected_ebitda = projected_revenue * (ebitda_margin_per_year[year_idx] / 100)
+        elif ebitda_margin_override:
+            # USER OVERRIDE: EBITDA margin directly overrides the derived EBITDA
             projected_ebitda = projected_revenue * (float(ebitda_margin_override) / 100)
         
         # Sanity check: EBITDA should be positive for healthy companies
         # (skip auto-correction if user explicitly set the EBITDA margin)
-        if projected_ebitda < 0 and not ebitda_margin_override:
+        active_ebitda_override = (
+            (ebitda_margin_per_year and year_idx < len(ebitda_margin_per_year) and ebitda_margin_per_year[year_idx] > 0)
+            or ebitda_margin_override
+        )
+        if projected_ebitda < 0 and not active_ebitda_override:
             # Adjust opex to maintain 5% EBITDA margin
             projected_opex = projected_revenue * 0.85 - projected_cogs
             projected_ebitda = projected_revenue * 0.15
@@ -6341,7 +6357,33 @@ def main():
                     key='listed_ebitda',
                     help="0 = Calculated as Revenue - OpEx"
                 )
-        
+
+            # ── PER-YEAR PARAMETERS (Listed) ──────────────────────────────
+            st.markdown("### 📅 Year-by-Year Revenue Growth & EBITDA Margin")
+            st.caption("Set individual values per projected year. Leave at 0 to fall back to the single overrides above (or auto-calc from history).")
+            rev_growth_per_year_listed = []
+            ebitda_margin_per_year_listed = []
+            yr_cols_listed = st.columns(min(int(projection_years_listed), 5))
+            for _yi in range(int(projection_years_listed)):
+                _col = yr_cols_listed[_yi % len(yr_cols_listed)]
+                with _col:
+                    st.markdown(f"**Year {_yi + 1}**")
+                    _rg = st.number_input(
+                        f"Rev Growth %",
+                        min_value=0.0, max_value=200.0, value=0.0, step=0.5,
+                        key=f'listed_rg_yr{_yi+1}',
+                        help="0 = use global override / auto"
+                    )
+                    _em = st.number_input(
+                        f"EBITDA Margin %",
+                        min_value=0.0, max_value=100.0, value=0.0, step=0.5,
+                        key=f'listed_em_yr{_yi+1}',
+                        help="0 = use global override / auto"
+                    )
+                    rev_growth_per_year_listed.append(_rg)
+                    ebitda_margin_per_year_listed.append(_em)
+            # ── END PER-YEAR ───────────────────────────────────────────────
+
             st.markdown("### 🏗️ CapEx & Depreciation")
             col4, col5, col6 = st.columns(3)
             with col4:
@@ -7465,6 +7507,9 @@ def main():
                 projections, drivers = project_financials(
                     financials, wc_metrics, projection_years_listed, tax_rate,
                     rev_growth_override_listed, opex_margin_override_listed, capex_ratio_override_listed,
+                    # Per-year controls
+                    rev_growth_per_year=rev_growth_per_year_listed if any(v > 0 for v in rev_growth_per_year_listed) else None,
+                    ebitda_margin_per_year=ebitda_margin_per_year_listed if any(v > 0 for v in ebitda_margin_per_year_listed) else None,
                     # Pass all advanced user controls
                     ebitda_margin_override=ebitda_margin_override if ebitda_margin_override > 0 else None,
                     depreciation_rate_override=depreciation_rate_override if depreciation_rate_override > 0 else None,
@@ -9423,7 +9468,34 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     key='unlisted_ebitda',
                     help="0 = Calculated as Revenue - OpEx"
                 )
-        
+
+            # ── PER-YEAR PARAMETERS (Unlisted) ────────────────────────────
+            st.markdown("### 📅 Year-by-Year Revenue Growth & EBITDA Margin")
+            st.caption("Set individual values per projected year. Leave at 0 to fall back to the single overrides above (or auto-calc from history).")
+            rev_growth_per_year_unlisted = []
+            ebitda_margin_per_year_unlisted = []
+            _proj_yrs_unl = int(st.session_state.get('unlisted_proj_years', 5))
+            yr_cols_unlisted = st.columns(min(_proj_yrs_unl, 5))
+            for _yi in range(_proj_yrs_unl):
+                _col = yr_cols_unlisted[_yi % len(yr_cols_unlisted)]
+                with _col:
+                    st.markdown(f"**Year {_yi + 1}**")
+                    _rg = st.number_input(
+                        f"Rev Growth %",
+                        min_value=0.0, max_value=200.0, value=0.0, step=0.5,
+                        key=f'unlisted_rg_yr{_yi+1}',
+                        help="0 = use global override / auto"
+                    )
+                    _em = st.number_input(
+                        f"EBITDA Margin %",
+                        min_value=0.0, max_value=100.0, value=0.0, step=0.5,
+                        key=f'unlisted_em_yr{_yi+1}',
+                        help="0 = use global override / auto"
+                    )
+                    rev_growth_per_year_unlisted.append(_rg)
+                    ebitda_margin_per_year_unlisted.append(_em)
+            # ── END PER-YEAR ───────────────────────────────────────────────
+
             st.markdown("### 🏗️ CapEx & Depreciation")
             col4, col5, col6 = st.columns(3)
             with col4:
@@ -9659,6 +9731,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                         rev_growth_override_unlisted if rev_growth_override_unlisted > 0 else None, 
                         opex_margin_override_unlisted if opex_margin_override_unlisted > 0 else None, 
                         capex_ratio_override_unlisted if capex_ratio_override_unlisted > 0 else None,
+                        # Per-year controls
+                        rev_growth_per_year=rev_growth_per_year_unlisted if any(v > 0 for v in rev_growth_per_year_unlisted) else None,
+                        ebitda_margin_per_year=ebitda_margin_per_year_unlisted if any(v > 0 for v in ebitda_margin_per_year_unlisted) else None,
                         # Pass all advanced user controls
                         ebitda_margin_override=ebitda_margin_override_unlisted if ebitda_margin_override_unlisted > 0 else None,
                         depreciation_rate_override=depreciation_rate_override_unlisted if depreciation_rate_override_unlisted > 0 else None,
@@ -10652,6 +10727,33 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     key='screener_ebitda',
                     help="0 = Calculated as Revenue - OpEx"
                 )
+
+            # ── PER-YEAR PARAMETERS (Screener) ────────────────────────────
+            st.markdown("### 📅 Year-by-Year Revenue Growth & EBITDA Margin")
+            st.caption("Set individual values per projected year. Leave at 0 to fall back to the single overrides above (or auto-calc from history).")
+            rev_growth_per_year_screener = []
+            ebitda_margin_per_year_screener = []
+            _proj_yrs_scr = int(st.session_state.get('screener_proj_years', 5))
+            yr_cols_screener = st.columns(min(_proj_yrs_scr, 5))
+            for _yi in range(_proj_yrs_scr):
+                _col = yr_cols_screener[_yi % len(yr_cols_screener)]
+                with _col:
+                    st.markdown(f"**Year {_yi + 1}**")
+                    _rg = st.number_input(
+                        f"Rev Growth %",
+                        min_value=0.0, max_value=200.0, value=0.0, step=0.5,
+                        key=f'screener_rg_yr{_yi+1}',
+                        help="0 = use global override / auto"
+                    )
+                    _em = st.number_input(
+                        f"EBITDA Margin %",
+                        min_value=0.0, max_value=100.0, value=0.0, step=0.5,
+                        key=f'screener_em_yr{_yi+1}',
+                        help="0 = use global override / auto"
+                    )
+                    rev_growth_per_year_screener.append(_rg)
+                    ebitda_margin_per_year_screener.append(_em)
+            # ── END PER-YEAR ───────────────────────────────────────────────
             
             st.markdown("### 🏗️ CapEx & Depreciation")
             col4, col5, col6 = st.columns(3)
@@ -11054,6 +11156,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             rev_growth_override_screener if rev_growth_override_screener > 0 else None,
                             opex_margin_override_screener if opex_margin_override_screener > 0 else None,
                             capex_ratio_override_screener if capex_ratio_override_screener > 0 else None,
+                            # Per-year controls
+                            rev_growth_per_year=rev_growth_per_year_screener if any(v > 0 for v in rev_growth_per_year_screener) else None,
+                            ebitda_margin_per_year=ebitda_margin_per_year_screener if any(v > 0 for v in ebitda_margin_per_year_screener) else None,
                             ebitda_margin_override=ebitda_margin_override_screener if ebitda_margin_override_screener > 0 else None,
                             depreciation_rate_override=depreciation_rate_override_screener if depreciation_rate_override_screener > 0 else None,
                             depreciation_method=depreciation_method_screener,
