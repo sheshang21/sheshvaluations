@@ -57,24 +57,49 @@ def get_peers_from_yahoo_comparison(ticker: str, max_peers: int = 20, exclude_se
         soup = BeautifulSoup(response.content, 'html.parser')
         
         # STRATEGY 1: Target carousel links - BOTH .NS and .BO
+        # NOTE: Yahoo Finance no longer includes exchange suffix in carousel hrefs.
+        # Links appear as /quote/TICKER/ instead of /quote/TICKER.NS/
         print("[PeerFetcher] Strategy 1: Carousel links...")
         carousel_links = soup.find_all('a', class_='loud-link')
         
         for link in carousel_links:
             href = link.get('href', '')
-            if '/quote/' in href and ('.NS' in href or '.BO' in href):
-                match = re.search(r'/quote/([A-Z0-9&\-]+)\.(NS|BO)', href)
-                if match:
-                    peer = match.group(1)
+            if '/quote/' not in href:
+                continue
+
+            # Try explicit .NS/.BO first (legacy Yahoo behavior)
+            match = re.search(r'/quote/([A-Z0-9&\-]+)\.(NS|BO)', href)
+            if match:
+                peer = match.group(1)
+            else:
+                # Yahoo now strips exchange suffix from carousel hrefs — parse bare ticker
+                match = re.search(r'/quote/([A-Z0-9&\-]+)/?$', href)
+                if not match:
+                    continue
+                peer = match.group(1)
+
+            if exclude_self and peer == ticker_base:
+                continue
+            if peer not in peers:
+                peers.append(peer)
+                print(f"   Found: {peer}")
+        
+        # STRATEGY 2: Scan symbol spans - Yahoo renders ticker in <span class="symbol"> without suffix
+        if len(peers) < 3:
+            print("[PeerFetcher] Strategy 2: Symbol spans...")
+            for span in soup.find_all('span', class_='symbol'):
+                text = span.get_text(strip=True)
+                if re.match(r'^[A-Z][A-Z0-9&\-]{1,}$', text):
+                    peer = text.strip()
                     if exclude_self and peer == ticker_base:
                         continue
                     if peer not in peers:
                         peers.append(peer)
                         print(f"   Found: {peer}")
-        
-        # STRATEGY 2: Scan spans - BOTH .NS and .BO
+
+        # STRATEGY 2b: Fallback span scan for explicit .NS/.BO text
         if len(peers) < 3:
-            print("[PeerFetcher] Strategy 2: Span elements...")
+            print("[PeerFetcher] Strategy 2b: Span elements with exchange suffix...")
             for span in soup.find_all('span'):
                 text = span.get_text(strip=True)
                 if re.match(r'^[A-Z][A-Z0-9&\-]*\.(NS|BO)$', text):
