@@ -829,11 +829,17 @@ def get_currency_symbol(info_dict):
     # yfinance exposes 'currency' (price currency) and 'financialCurrency' (statement currency)
     ccy = info_dict.get('currency') or info_dict.get('financialCurrency') or 'INR'
     return _SYMBOLS.get(ccy.upper(), f'{ccy} ')
-    """Add exchange suffix to ticker"""
+
+def get_ticker_with_exchange(ticker, exchange_suffix):
+    """Add exchange suffix to ticker. If suffix is empty or ticker already has one, return as-is."""
     ticker = ticker.strip().upper()
-    if '.NS' in ticker or '.BO' in ticker:
-        return ticker  # Already has suffix
-    return f"{ticker}.{exchange}"
+    # Already has a recognised suffix — leave it alone
+    known = ('.NS', '.BO', '.L', '.SS', '.HK', '.DE', '.F', '.KS', '.TW', '.SI', '.AX', '.TO', '.V')
+    if any(ticker.endswith(s) for s in known):
+        return ticker
+    if not exchange_suffix:          # NASDAQ/NYSE / Other — bare ticker is correct
+        return ticker
+    return f"{ticker}.{exchange_suffix}"
 
 # PDF EXPORT FUNCTIONS (EMBEDDED)
 # ================================
@@ -6091,12 +6097,33 @@ def main():
     
         with col1:
             # Exchange selection for COMPANY BEING VALUED
-            exchange = st.radio("Company Exchange:", ["NSE", "BSE"], horizontal=True, help="Select exchange for the company being valued")
-            exchange_suffix = "NS" if exchange == "NSE" else "BO"
-            _is_indian_exchange = True  # Listed mode only supports NSE/BSE
-        
-            ticker_label = f"Enter {exchange} Ticker:"
-            ticker_placeholder = "e.g., RELIANCE" if exchange == "NSE" else "e.g., RELIANCE"
+            exchange = st.radio(
+                "Company Exchange:",
+                ["NSE", "BSE", "NASDAQ/NYSE", "LSE", "SSE/HKEX", "Other"],
+                horizontal=True,
+                help="Select exchange. For NASDAQ/NYSE enter bare ticker (AAPL). LSE: TICKER.L. SSE: TICKER.SS. HKEX: TICKER.HK. Other: enter full YF ticker."
+            )
+
+            # Map exchange → yfinance suffix and Indian flag
+            _EXCHANGE_MAP = {
+                "NSE":       ("NS", True),
+                "BSE":       ("BO", True),
+                "NASDAQ/NYSE": ("",  False),
+                "LSE":       ("L",  False),
+                "SSE/HKEX":  ("",   False),   # user must include .SS / .HK in ticker
+                "Other":     ("",   False),
+            }
+            exchange_suffix, _is_indian_exchange = _EXCHANGE_MAP.get(exchange, ("", False))
+
+            _ticker_hints = {
+                "NSE":         ("e.g., RELIANCE", "NSE Ticker (no suffix needed):"),
+                "BSE":         ("e.g., RELIANCE",  "BSE Ticker (no suffix needed):"),
+                "NASDAQ/NYSE": ("e.g., AAPL, MSFT, NVDA", "NASDAQ/NYSE Ticker:"),
+                "LSE":         ("e.g., SHEL, HSBA", "LSE Ticker (no suffix — added automatically):"),
+                "SSE/HKEX":    ("e.g., 600519.SS or 0700.HK", "SSE/HKEX Ticker (include .SS or .HK):"),
+                "Other":       ("e.g., SIE.DE, 005930.KS", "Yahoo Finance Ticker (full, with suffix):"),
+            }
+            ticker_placeholder, ticker_label = _ticker_hints.get(exchange, ("Enter ticker", "Ticker:"))
             ticker = st.text_input(ticker_label, placeholder=ticker_placeholder)
         
             # Reset analysis state when ticker changes
@@ -6288,11 +6315,33 @@ def main():
             terminal_growth = st.number_input("Terminal Growth Rate (%):", min_value=0.0, max_value=10.0, value=4.0, step=0.5, key='listed_tg')
             
             # Risk-free rate override
-            st.markdown("**🏛️ Risk-Free Rate (G-Sec 10Y)**")
+            _RF_LABEL = {
+                "NSE": "Risk-Free Rate (India G-Sec 10Y)",
+                "BSE": "Risk-Free Rate (India G-Sec 10Y)",
+                "NASDAQ/NYSE": "Risk-Free Rate (US Treasury 10Y)",
+                "LSE": "Risk-Free Rate (UK Gilt 10Y)",
+                "SSE/HKEX": "Risk-Free Rate (10Y Bond)",
+                "Other": "Risk-Free Rate (10Y Bond)",
+            }
+            st.markdown(f"**🏛️ {_RF_LABEL.get(exchange, 'Risk-Free Rate (10Y)')}**")
             
+            # Default Rf/Rm depend on market
+            _DEFAULT_RF = {
+                "NSE": 6.83, "BSE": 6.83,
+                "NASDAQ/NYSE": 4.25, "LSE": 4.10,
+                "SSE/HKEX": 2.50, "Other": 4.50,
+            }
+            _DEFAULT_RM = {
+                "NSE": 12.0, "BSE": 12.0,
+                "NASDAQ/NYSE": 10.5, "LSE": 9.5,
+                "SSE/HKEX": 9.0, "Other": 10.0,
+            }
+            _rf_default = _DEFAULT_RF.get(exchange, 6.83)
+            _rm_default = _DEFAULT_RM.get(exchange, 12.0)
+
             # Initialize widget state from session if not already set
             if 'manual_rf_listed' not in st.session_state:
-                st.session_state.manual_rf_listed = st.session_state.get('cached_rf_rate_listed', 6.83)
+                st.session_state.manual_rf_listed = st.session_state.get('cached_rf_rate_listed', _rf_default)
             
             manual_rf_rate = st.number_input(
                 f"Risk-Free Rate (%)",
@@ -6309,7 +6358,7 @@ def main():
             
             # Initialize widget state from session if not already set
             if 'manual_rm_listed' not in st.session_state:
-                st.session_state.manual_rm_listed = st.session_state.get('cached_rm_rate_listed', 12.0)
+                st.session_state.manual_rm_listed = st.session_state.get('cached_rm_rate_listed', _rm_default)
             
             manual_rm_rate = st.number_input(
                 f"Market Return (%)",
