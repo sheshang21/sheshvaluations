@@ -801,13 +801,36 @@ def clear_ticker_cache():
 
 # ================================
 
-# Helper function for ticker exchange suffix
+# Exchange suffix map — NASDAQ and NYSE have NO suffix on Yahoo Finance
+EXCHANGE_SUFFIX_MAP = {
+    "NSE":    "NS",
+    "BSE":    "BO",
+    "NASDAQ": "",    # No suffix needed
+    "NYSE":   "",    # No suffix needed
+    "SSE":    "SS",  # Shanghai Stock Exchange
+}
+
+# Exchanges that are Indian (peer comparison / competitor analysis restricted to these)
+INDIAN_EXCHANGES = {"NSE", "BSE"}
+
 def get_ticker_with_exchange(ticker, exchange):
-    """Add exchange suffix to ticker"""
+    """
+    Add exchange suffix to ticker.
+    - NSE  → TICKER.NS
+    - BSE  → TICKER.BO
+    - NASDAQ/NYSE → TICKER  (no suffix)
+    - SSE  → TICKER.SS
+    Already-suffixed tickers are returned unchanged.
+    """
     ticker = ticker.strip().upper()
-    if '.NS' in ticker or '.BO' in ticker:
-        return ticker  # Already has suffix
-    return f"{ticker}.{exchange}"
+    # If user already included a known suffix, keep it as-is
+    known_suffixes = (".NS", ".BO", ".SS")
+    if any(ticker.endswith(s) for s in known_suffixes):
+        return ticker
+    suffix = EXCHANGE_SUFFIX_MAP.get(exchange, exchange)
+    if suffix:
+        return f"{ticker}.{suffix}"
+    return ticker  # NASDAQ / NYSE — no suffix
 
 # PDF EXPORT FUNCTIONS (EMBEDDED)
 # ================================
@@ -3711,24 +3734,105 @@ def fetch_screener_peer_data(ticker_symbol):
         return None
 
 
-def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financials=None, target_shares=None, exchange_suffix="NS", projections=None, use_screener_peers=False):
+def _get_price_at_date(ticker_obj, price_date):
     """
-    Perform comparative valuation using peer multiples
-    
+    Fetch the closing price of a ticker on or just before `price_date` (a datetime.date).
+    Falls back to the nearest available trading day within ±5 calendar days.
+    Returns float or 0.
+    """
+    try:
+        from datetime import timedelta
+        start = price_date - timedelta(days=7)
+        end   = price_date + timedelta(days=1)
+        hist  = ticker_obj.history(start=str(start), end=str(end))
+        if hist is not None and not hist.empty:
+            # Get the last close on or before price_date
+            hist.index = pd.to_datetime(hist.index).normalize()
+            target = pd.Timestamp(price_date)
+            subset = hist[hist.index <= target]
+            if not subset.empty:
+                return float(subset['Close'].iloc[-1])
+            # If price_date is before all data, use the first available
+            return float(hist['Close'].iloc[0])
+    except Exception:
+        pass
+    return 0.0
+
+
+def _get_fy_financials_col(financials_df, price_date):
+    """
+    Given a yfinance financials DataFrame (columns are fiscal-year-end timestamps,
+    newest first) and a price_date (datetime.date), return the column whose fiscal
+    year contains price_date.
+
+    Logic:
+    - yfinance reports the fiscal-year-END date as the column timestamp.
+    - We detect whether the company uses a Apr-Mar Indian FY or a Jan-Dec calendar FY
+      by looking at the month of the most recent column.
+    - For Indian FY (year-end = March):   FY26 = Apr-2025 → Mar-2026
+    - For calendar FY (year-end = Dec):   FY25 = Jan-2025 → Dec-2025
+    - For any other year-end month M:     FY runs from (M+1) of prior year to M of reported year.
+    - Returns the column (pd.Timestamp) whose FY contains price_date, or the closest
+      available column if none exactly match (most-recent fallback).
+    """
+    if financials_df is None or financials_df.empty:
+        return None
+    cols = list(financials_df.columns)  # sorted newest → oldest
+    if not cols:
+        return None
+
+    from datetime import date as _date
+    pd_date = pd.Timestamp(price_date)
+
+    for col in cols:
+        fy_end = pd.Timestamp(col)
+        fy_end_month = fy_end.month
+        fy_end_year  = fy_end.year
+
+        # FY start = first day of the month after the PREVIOUS year-end
+        # e.g. year-end March → FY start = April 1 of prior year
+        if fy_end_month == 12:
+            fy_start = pd.Timestamp(f"{fy_end_year}-01-01")
+        else:
+            fy_start = pd.Timestamp(f"{fy_end_year - 1}-{fy_end_month + 1:02d}-01")
+
+        if fy_start <= pd_date <= fy_end:
+            return col
+
+    # Fallback: use the most recent column
+    return cols[0]
+
+
+def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financials=None, target_shares=None, exchange_suffix="NS", projections=None, use_screener_peers=False, comp_price_date=None):
+    """
+    Perform comparative valuation using peer multiples.
+
     Args:
         target_ticker: Target company ticker
         comp_tickers_str: Comma-separated peer tickers
         target_financials: Target company financials dict
         target_shares: Target company shares outstanding
-        exchange_suffix: NS or BO
+        exchange_suffix: NS, BO, or "" for NASDAQ/NYSE
         projections: DCF projections dict with 'nopat' key
         use_screener_peers: If True, fetch peer data from Screener.in instead of Yahoo Finance
+        comp_price_date: datetime.date — price on this date is used for all peers; financials
+            are pulled from the FY that contains this date. Defaults to today.
     """
     try:
         comp_tickers = [t.strip() for t in comp_tickers_str.split(',') if t.strip()]
         
         if not comp_tickers:
             return None
+
+        # ── Price date resolution ──────────────────────────────────────────
+        from datetime import date as _date
+        _today = _date.today()
+        _use_hist_price = comp_price_date is not None and comp_price_date < _today
+        if comp_price_date is None:
+            comp_price_date = _today
+        if _use_hist_price:
+            st.info(f"📅 **Comp Price Date:** {comp_price_date.strftime('%d-%b-%Y')} — fetching historical prices & matching FY financials for all companies.")
+        # ─────────────────────────────────────────────────────────────────
         
         results = {
             'target': {},
@@ -3745,26 +3849,46 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
             target_info = target_stock.info if target_stock else None
             target_financials_yf = target_stock.financials
             target_bs = target_stock.balance_sheet
-            
+
             if not target_info:
                 st.error(f"Could not fetch data for {target_ticker}")
                 return results
-            
+
+            # ── FY-aware column for target ────────────────────────────────
+            _target_fy_col = _get_fy_financials_col(target_financials_yf, comp_price_date)
+
+            # Price: historical on comp_price_date or current
+            if _use_hist_price:
+                _target_price = _get_price_at_date(target_stock, comp_price_date)
+                if _target_price == 0:
+                    _target_price = target_info.get('currentPrice', 0) or target_info.get('regularMarketPrice', 0)
+            else:
+                _target_price = target_info.get('currentPrice', 0) or target_info.get('regularMarketPrice', 0)
+
+            # Financials from FY column
+            _tfc = _target_fy_col
+            _t_revenue   = safe_extract(target_financials_yf, 'Total Revenue', _tfc) if (_tfc and 'Total Revenue' in target_financials_yf.index) else 0
+            _t_ebitda    = target_info.get('ebitda', 0)  # yfinance .info ebitda is TTM; use if col not available
+            _t_net_income = safe_extract(target_financials_yf, 'Net Income', _tfc) if (_tfc and 'Net Income' in target_financials_yf.index) else 0
+            # BS uses the same FY col
+            _tbc = _get_fy_financials_col(target_bs, comp_price_date)
+            _t_total_debt = safe_extract(target_bs, 'Long Term Debt', _tbc) if (_tbc and 'Long Term Debt' in target_bs.index) else 0
+            _t_cash       = safe_extract(target_bs, 'Cash And Cash Equivalents', _tbc) if (_tbc and 'Cash And Cash Equivalents' in target_bs.index) else 0
+
             results['target'] = {
                 'name': target_info.get('longName', target_ticker),
-                # Robust price fetching - try multiple methods
-                'current_price': target_info.get('currentPrice', 0) or target_info.get('regularMarketPrice', 0) or 0,
+                'current_price': _target_price,
                 'shares': target_info.get('sharesOutstanding', 0),
-                'market_cap': target_info.get('marketCap', 0),
+                'market_cap': _target_price * target_info.get('sharesOutstanding', 0) if _use_hist_price else target_info.get('marketCap', 0),
                 'enterprise_value': target_info.get('enterpriseValue', 0),
-                'revenue': safe_extract(target_financials_yf, 'Total Revenue', target_financials_yf.columns[0]) if 'Total Revenue' in target_financials_yf.index else 0,
-                'ebitda': target_info.get('ebitda', 0),
-                'net_income': safe_extract(target_financials_yf, 'Net Income', target_financials_yf.columns[0]) if 'Net Income' in target_financials_yf.index else 0,
+                'revenue': _t_revenue,
+                'ebitda': _t_ebitda,
+                'net_income': _t_net_income,
                 'book_value_per_share': target_info.get('bookValue', 0),
-                'total_debt': safe_extract(target_bs, 'Long Term Debt', target_bs.columns[0]) if 'Long Term Debt' in target_bs.index else 0,
-                'cash': safe_extract(target_bs, 'Cash And Cash Equivalents', target_bs.columns[0]) if 'Cash And Cash Equivalents' in target_bs.index else 0,
+                'total_debt': _t_total_debt,
+                'cash': _t_cash,
             }
-            
+
             # Calculate EPS and Book Value - ALWAYS set to avoid KeyError
             if results['target']['shares'] > 0 and results['target']['net_income'] != 0:
                 results['target']['eps'] = results['target']['net_income'] / results['target']['shares']
@@ -3863,28 +3987,42 @@ def perform_comparative_valuation(target_ticker, comp_tickers_str, target_financ
                     
                     comp_financials_yf = comp_stock.financials
                     comp_bs = comp_stock.balance_sheet
+
+                    # ── FY-aware column ───────────────────────────────────
+                    _fy_col = _get_fy_financials_col(comp_financials_yf, comp_price_date)
+                    _bs_col = _get_fy_financials_col(comp_bs, comp_price_date)
+                    if _fy_col is not None:
+                        st.caption(f"  ↳ {ticker}: using FY ending {pd.Timestamp(_fy_col).strftime('%b-%Y')} for multiples")
+                    # ─────────────────────────────────────────────────────
                     
-                    # Extract financial data
+                    # Extract financial data — from FY-matching column
                     shares = comp_info.get('sharesOutstanding', 0)
-                    # Robust price fetching - try multiple methods
-                    price = comp_info.get('currentPrice', 0)
-                    if not price or price == 0:
-                        price = comp_info.get('regularMarketPrice', 0)
-                    if not price or price == 0:
-                        try:
-                            hist = comp_stock.history(period='1d')
-                            if not hist.empty:
-                                price = hist['Close'].iloc[-1]
-                        except:
-                            pass
-                    market_cap = comp_info.get('marketCap', 0)
+
+                    # Price: historical on comp_price_date or current
+                    if _use_hist_price:
+                        price = _get_price_at_date(comp_stock, comp_price_date)
+                        if price == 0:
+                            price = comp_info.get('currentPrice', 0) or comp_info.get('regularMarketPrice', 0)
+                    else:
+                        price = comp_info.get('currentPrice', 0)
+                        if not price or price == 0:
+                            price = comp_info.get('regularMarketPrice', 0)
+                        if not price or price == 0:
+                            try:
+                                hist = comp_stock.history(period='1d')
+                                if not hist.empty:
+                                    price = hist['Close'].iloc[-1]
+                            except:
+                                pass
+
+                    market_cap = price * shares if _use_hist_price and shares else comp_info.get('marketCap', 0)
                     
-                    revenue = safe_extract(comp_financials_yf, 'Total Revenue', comp_financials_yf.columns[0]) if 'Total Revenue' in comp_financials_yf.index and not comp_financials_yf.empty else 0
-                    ebitda = comp_info.get('ebitda', 0)
-                    net_income = safe_extract(comp_financials_yf, 'Net Income', comp_financials_yf.columns[0]) if 'Net Income' in comp_financials_yf.index and not comp_financials_yf.empty else 0
+                    revenue    = safe_extract(comp_financials_yf, 'Total Revenue', _fy_col) if (_fy_col and 'Total Revenue' in comp_financials_yf.index and not comp_financials_yf.empty) else 0
+                    ebitda     = comp_info.get('ebitda', 0)  # fallback to TTM ebitda from info
+                    net_income = safe_extract(comp_financials_yf, 'Net Income', _fy_col) if (_fy_col and 'Net Income' in comp_financials_yf.index and not comp_financials_yf.empty) else 0
                     
-                    total_debt = safe_extract(comp_bs, 'Long Term Debt', comp_bs.columns[0]) if 'Long Term Debt' in comp_bs.index and not comp_bs.empty else 0
-                    cash = safe_extract(comp_bs, 'Cash And Cash Equivalents', comp_bs.columns[0]) if 'Cash And Cash Equivalents' in comp_bs.index and not comp_bs.empty else 0
+                    total_debt = safe_extract(comp_bs, 'Long Term Debt', _bs_col) if (_bs_col and 'Long Term Debt' in comp_bs.index and not comp_bs.empty) else 0
+                    cash       = safe_extract(comp_bs, 'Cash And Cash Equivalents', _bs_col) if (_bs_col and 'Cash And Cash Equivalents' in comp_bs.index and not comp_bs.empty) else 0
                     
                     book_value = comp_info.get('bookValue', 0)
                     eps = net_income / shares if shares > 0 else 0
@@ -6063,11 +6201,25 @@ def main():
     
         with col1:
             # Exchange selection for COMPANY BEING VALUED
-            exchange = st.radio("Company Exchange:", ["NSE", "BSE"], horizontal=True, help="Select exchange for the company being valued")
-            exchange_suffix = "NS" if exchange == "NSE" else "BO"
+            exchange = st.radio(
+                "Company Exchange:",
+                ["NSE", "BSE", "NASDAQ", "NYSE", "SSE"],
+                horizontal=True,
+                help="Select the primary listing exchange for the company being valued. NASDAQ/NYSE tickers need no suffix (e.g. AAPL). SSE uses .SS suffix (e.g. 600519 → 600519.SS)."
+            )
+            exchange_suffix = EXCHANGE_SUFFIX_MAP.get(exchange, "NS")  # fall back to NS
         
+            _is_indian_exchange = exchange in INDIAN_EXCHANGES
+
+            ticker_placeholders = {
+                "NSE": "e.g., RELIANCE",
+                "BSE": "e.g., RELIANCE",
+                "NASDAQ": "e.g., AAPL",
+                "NYSE": "e.g., JPM",
+                "SSE": "e.g., 600519",
+            }
             ticker_label = f"Enter {exchange} Ticker:"
-            ticker_placeholder = "e.g., RELIANCE" if exchange == "NSE" else "e.g., RELIANCE"
+            ticker_placeholder = ticker_placeholders.get(exchange, "e.g., TICKER")
             ticker = st.text_input(ticker_label, placeholder=ticker_placeholder)
         
             # Reset analysis state when ticker changes
@@ -6098,7 +6250,12 @@ def main():
                 )
         
             st.markdown("---")
-            st.markdown("**📊 Peer Companies (Both Exchanges)**")
+            if _is_indian_exchange:
+                st.markdown("**📊 Peer Companies (NSE & BSE — for Beta & Relative Valuation)**")
+                st.caption("Beta and peer-relative valuation are restricted to NSE/BSE peers. Comp valuation uses these peers too.")
+            else:
+                st.markdown("**📊 Peer Companies (Worldwide — for Comparative Valuation)**")
+                st.info("ℹ️ Enter bare tickers for NASDAQ/NYSE peers (e.g. MSFT, GOOGL). For Indian peers add suffix: INFY.NS or 500209.BO. For SSE: 600519.SS.")
         
             # Normalize ticker key (remove suffix for consistent storage)
             ticker_key = ticker.replace('.NS', '').replace('.BO', '') if ticker else ""
@@ -6254,35 +6411,48 @@ def main():
             stored_nse = st.session_state.fetched_nse_peers.get(ticker_key, "") if ticker_key else ""
             stored_bse = st.session_state.fetched_bse_peers.get(ticker_key, "") if ticker_key else ""
         
-            # NSE Peers Box - AUTO-POPULATED from session state
-            nse_peers = st.text_input(
-                "NSE Peer Tickers (comma-separated):",
-                value=stored_nse,  # ← This auto-fills from session state!
-                placeholder="e.g., TCS, INFY, WIPRO",
-                key='nse_peers_listed',
-                help="🔍 Click Auto-Fetch above to populate automatically, or enter manually"
-            )
-        
-            # BSE Peers Box - AUTO-POPULATED from session state
-            bse_peers = st.text_input(
-                "BSE Peer Tickers (comma-separated):",
-                value=stored_bse,  # ← This auto-fills from session state!
-                placeholder="e.g., SUNPHARMA, TATAMOTORS",
-                key='bse_peers_listed',
-                help="Enter BSE-listed peer companies"
-            )
-        
-            # Combine peers with their exchange suffixes
-            comp_tickers_listed = ""
-            if nse_peers.strip():
-                nse_list = [f"{t.strip()}.NS" if '.NS' not in t and '.BO' not in t else t.strip() for t in nse_peers.split(',') if t.strip()]
-                comp_tickers_listed = ",".join(nse_list)
-            if bse_peers.strip():
-                bse_list = [f"{t.strip()}.BO" if '.NS' not in t and '.BO' not in t else t.strip() for t in bse_peers.split(',') if t.strip()]
-                if comp_tickers_listed:
-                    comp_tickers_listed += "," + ",".join(bse_list)
-                else:
-                    comp_tickers_listed = ",".join(bse_list)
+            if _is_indian_exchange:
+                # Indian exchange: keep the original NSE/BSE split boxes
+                nse_peers = st.text_input(
+                    "NSE Peer Tickers (comma-separated):",
+                    value=stored_nse,
+                    placeholder="e.g., TCS, INFY, WIPRO",
+                    key='nse_peers_listed',
+                    help="🔍 Click Auto-Fetch above to populate automatically, or enter manually"
+                )
+                bse_peers = st.text_input(
+                    "BSE Peer Tickers (comma-separated):",
+                    value=stored_bse,
+                    placeholder="e.g., SUNPHARMA, TATAMOTORS",
+                    key='bse_peers_listed',
+                    help="Enter BSE-listed peer companies"
+                )
+                # Combine peers with their exchange suffixes
+                comp_tickers_listed = ""
+                if nse_peers.strip():
+                    nse_list = [f"{t.strip()}.NS" if not any(t.strip().endswith(s) for s in ('.NS','.BO','.SS')) else t.strip()
+                                for t in nse_peers.split(',') if t.strip()]
+                    comp_tickers_listed = ",".join(nse_list)
+                if bse_peers.strip():
+                    bse_list = [f"{t.strip()}.BO" if not any(t.strip().endswith(s) for s in ('.NS','.BO','.SS')) else t.strip()
+                                for t in bse_peers.split(',') if t.strip()]
+                    if comp_tickers_listed:
+                        comp_tickers_listed += "," + ",".join(bse_list)
+                    else:
+                        comp_tickers_listed = ",".join(bse_list)
+            else:
+                # Non-Indian exchange: single worldwide peer box; tickers used as-is
+                # (user can mix AAPL, MSFT, INFY.NS, 600519.SS etc.)
+                worldwide_peers_raw = st.text_input(
+                    "Peer Tickers — worldwide (comma-separated):",
+                    placeholder="e.g., MSFT, GOOGL, INFY.NS, 600519.SS",
+                    key='worldwide_peers_listed',
+                    help="Enter tickers exactly as they appear on Yahoo Finance. NASDAQ/NYSE: bare ticker. NSE: TICKER.NS. BSE: TICKER.BO. SSE: TICKER.SS."
+                )
+                # Tickers are used as-is; no suffix is appended automatically
+                comp_tickers_listed = ",".join(
+                    [t.strip() for t in worldwide_peers_raw.split(',') if t.strip()]
+                ) if worldwide_peers_raw.strip() else ""
     
         with col2:
             tax_rate = st.number_input("Tax Rate (%):", min_value=0.0, max_value=100.0, value=25.0, step=0.5, key='listed_tax')
@@ -6357,6 +6527,19 @@ def main():
             if beta_start_date_listed >= beta_end_date_listed:
                 st.error("⚠️ Beta start date must be before end date.")
             # ── End Beta Period ────────────────────────────────────────────
+
+            # ── Comp Valuation Price Date ──────────────────────────────────
+            st.markdown("**📅 Comp Valuation — Price Date**")
+            st.caption(
+                "Price on this date is fetched for every peer. Financials from the FY that contains this date are used to calculate multiples (e.g. if date is 15-Sep-2025, FY Apr-2025→Mar-2026 for Indian companies, or FY Jan-2025→Dec-2025 for calendar-year companies)."
+            )
+            comp_price_date = st.date_input(
+                "Price Date for Comp Multiples",
+                value=datetime.now().date(),
+                key='comp_price_date_listed',
+                help="Leave as today for current prices. Set a past date to value as of that date using the financials for the FY that date falls in."
+            )
+            # ── End Comp Price Date ────────────────────────────────────────
     
         with st.expander("⚙️ Advanced Projection Assumptions - FULL CONTROL"):
             st.info("💡 **Complete Control:** Override ANY projection parameter below. Leave at 0 or blank for auto-calculation from historical data.")
@@ -7722,7 +7905,8 @@ def main():
                             shares, 
                             exchange_suffix, 
                             projections=projections,
-                            use_screener_peers=use_screener_for_peers
+                            use_screener_peers=use_screener_for_peers,
+                            comp_price_date=comp_price_date
                         )
                     except Exception as e:
                         st.warning(f"Could not calculate comparative valuation: {str(e)}")
