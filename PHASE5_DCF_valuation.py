@@ -6093,6 +6093,7 @@ def main():
             # Exchange selection for COMPANY BEING VALUED
             exchange = st.radio("Company Exchange:", ["NSE", "BSE"], horizontal=True, help="Select exchange for the company being valued")
             exchange_suffix = "NS" if exchange == "NSE" else "BO"
+            _is_indian_exchange = True  # Listed mode only supports NSE/BSE
         
             ticker_label = f"Enter {exchange} Ticker:"
             ticker_placeholder = "e.g., RELIANCE" if exchange == "NSE" else "e.g., RELIANCE"
