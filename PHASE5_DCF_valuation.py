@@ -6810,7 +6810,7 @@ def main():
                                         if yf_info:
                                             current_price = yf_info.get('currentPrice', 0) or yf_info.get('regularMarketPrice', 0)
                                         if current_price > 0:
-                                            st.success(f"✅ Current Price: ₹{current_price:.2f} (Yahoo Finance)")
+                                            st.success(f"✅ Current Price: {_ticker_csym}{current_price:.2f} (Yahoo Finance)")
                                     except:
                                         st.warning("⚠️ Could not fetch current price - will use 0")
                             
@@ -7056,12 +7056,12 @@ def main():
                                     if error_bank:
                                         st.error(f"❌ Bank FCFE Error: {error_bank}")
                                     elif bank_dcf_result:
-                                        st.success(f"✅ **Bank FCFE Fair Value:** ₹{bank_dcf_result['fair_value_per_share']:.2f}")
+                                        st.success(f"✅ **Bank FCFE Fair Value:** {_ticker_csym}{bank_dcf_result['fair_value_per_share']:.2f}")
                                     
                                         # Display key metrics
                                         col_dcf1, col_dcf2, col_dcf3, col_dcf4 = st.columns(4)
                                         with col_dcf1:
-                                            st.metric("FCFE Fair Value", f"₹{bank_dcf_result['fair_value_per_share']:.2f}")
+                                            st.metric("FCFE Fair Value", f"{_ticker_csym}{bank_dcf_result['fair_value_per_share']:.2f}")
                                         with col_dcf2:
                                             st.metric("Cost of Equity (Ke)", f"{ke:.2f}%")
                                         with col_dcf3:
@@ -7108,7 +7108,7 @@ def main():
                     # Current Price & Fair Value Display
                     col_price1, col_price2 = st.columns(2)
                     with col_price1:
-                        st.metric("📊 Current Market Price", f"₹ {current_price:.2f}")
+                        st.metric("📊 Current Market Price", f"{_ticker_csym} {current_price:.2f}")
                 
                     # Collect all fair values (initialize list first!)
                     fair_values = []
@@ -7126,7 +7126,7 @@ def main():
                     avg_fair_value = np.mean(fair_values) if fair_values else 0
                 
                     with col_price2:
-                        st.metric("🎯 Average Fair Value", f"₹ {avg_fair_value:.2f}",
+                        st.metric("🎯 Average Fair Value", f"{_ticker_csym} {avg_fair_value:.2f}",
                                  delta=f"{((avg_fair_value - current_price) / current_price * 100):.1f}%")
                 
                     # Price vs Value Gauge
@@ -7187,16 +7187,16 @@ def main():
                         # Summary table
                         summary_data = []
                         if ri_model:
-                            summary_data.append(['Residual Income Model', f"₹{ri_model['value_per_share']:.2f}", 
+                            summary_data.append(['Residual Income Model', f"{_ticker_csym}{ri_model['value_per_share']:.2f}", 
                                                f"{((ri_model['value_per_share'] - current_price) / current_price * 100):.1f}%"])
                         if ddm_model:
-                            summary_data.append(['Dividend Discount Model', f"₹{ddm_model['value_per_share']:.2f}",
+                            summary_data.append(['Dividend Discount Model', f"{_ticker_csym}{ddm_model['value_per_share']:.2f}",
                                                f"{((ddm_model['value_per_share'] - current_price) / current_price * 100):.1f}%"])
                         if pb_roe_model:
-                            summary_data.append(['P/B with ROE Analysis', f"₹{pb_roe_model['value_per_share']:.2f}",
+                            summary_data.append(['P/B with ROE Analysis', f"{_ticker_csym}{pb_roe_model['value_per_share']:.2f}",
                                                f"{((pb_roe_model['value_per_share'] - current_price) / current_price * 100):.1f}%"])
                         if rel_val:
-                            summary_data.append(['Relative Valuation (Avg)', f"₹{rel_val['avg_fair_value']:.2f}",
+                            summary_data.append(['Relative Valuation (Avg)', f"{_ticker_csym}{rel_val['avg_fair_value']:.2f}",
                                                f"{((rel_val['avg_fair_value'] - current_price) / current_price * 100):.1f}%"])
                     
                         summary_df = pd.DataFrame(summary_data, columns=['Method', 'Fair Value', 'Upside/Downside'])
@@ -7210,11 +7210,11 @@ def main():
                     with tab2:
                         if ri_model:
                             st.subheader("Residual Income Model")
-                            st.write(f"**Fair Value per Share:** ₹{ri_model['value_per_share']:.2f}")
+                            st.write(f"**Fair Value per Share:** {_ticker_csym}{ri_model['value_per_share']:.2f}")
                         
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("Current Book Value", f"₹{ri_model['current_book_value']:,.0f}")
+                                st.metric("Current Book Value", f"{_ticker_csym}{ri_model['current_book_value']:,.0f}")
                             with col2:
                                 st.metric("ROE", f"{ri_model['roe']:.2f}%")
                             with col3:
@@ -7241,10 +7241,10 @@ def main():
                             st.markdown("---")
                             st.subheader("5-Year Residual Income Projections")
                             proj_df = pd.DataFrame(ri_model['projections'])
-                            proj_df['book_value'] = proj_df['book_value'].apply(lambda x: f"₹{x:,.0f}")
-                            proj_df['net_income'] = proj_df['net_income'].apply(lambda x: f"₹{x:,.0f}")
-                            proj_df['residual_income'] = proj_df['residual_income'].apply(lambda x: f"₹{x:,.0f}")
-                            proj_df['pv_ri'] = proj_df['pv_ri'].apply(lambda x: f"₹{x:,.0f}")
+                            proj_df['book_value'] = proj_df['book_value'].apply(lambda x: f"{_ticker_csym}{x:,.0f}")
+                            proj_df['net_income'] = proj_df['net_income'].apply(lambda x: f"{_ticker_csym}{x:,.0f}")
+                            proj_df['residual_income'] = proj_df['residual_income'].apply(lambda x: f"{_ticker_csym}{x:,.0f}")
+                            proj_df['pv_ri'] = proj_df['pv_ri'].apply(lambda x: f"{_ticker_csym}{x:,.0f}")
                             st.dataframe(proj_df, use_container_width=True)
                         
                             # Value breakdown
@@ -7252,11 +7252,11 @@ def main():
                             st.subheader("Valuation Breakdown")
                             breakdown_df = pd.DataFrame({
                                 'Component': ['Current Book Value', 'PV of 5Y Residual Income', 'PV of Terminal Value', 'Total Equity Value'],
-                                'Value (₹)': [
-                                    f"₹{ri_model['current_book_value']:,.0f}",
-                                    f"₹{ri_model['sum_pv_ri']:,.0f}",
-                                    f"₹{ri_model['terminal_ri_pv']:,.0f}",
-                                    f"₹{ri_model['total_equity_value']:,.0f}"
+                                'Value ({_ticker_csym})': [
+                                    f"{_ticker_csym}{ri_model['current_book_value']:,.0f}",
+                                    f"{_ticker_csym}{ri_model['sum_pv_ri']:,.0f}",
+                                    f"{_ticker_csym}{ri_model['terminal_ri_pv']:,.0f}",
+                                    f"{_ticker_csym}{ri_model['total_equity_value']:,.0f}"
                                 ]
                             })
                             st.table(breakdown_df)
@@ -7284,16 +7284,16 @@ def main():
                             else:
                                 st.info("ℹ️ Using estimated dividend data (no historical dividends found)")
                         
-                            st.write(f"**Fair Value per Share:** ₹{ddm_model['value_per_share']:.2f}")
+                            st.write(f"**Fair Value per Share:** {_ticker_csym}{ddm_model['value_per_share']:.2f}")
                         
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.metric("Current DPS", f"₹{ddm_model['current_dps']:.2f}")
+                                st.metric("Current DPS", f"{_ticker_csym}{ddm_model['current_dps']:.2f}")
                                 st.metric("Payout Ratio", f"{ddm_model['payout_ratio']:.1f}%")
                         
                             with col2:
                                 st.metric("Dividend Growth", f"{ddm_model['dividend_growth']:.1f}%")
-                                st.metric("Next Year DPS (D1)", f"₹{ddm_model['next_year_dps']:.2f}")
+                                st.metric("Next Year DPS (D1)", f"{_ticker_csym}{ddm_model['next_year_dps']:.2f}")
                         
                             # Historical dividends if available
                             if ddm_model.get('historical_dividends'):
@@ -7303,7 +7303,7 @@ def main():
                                 years_range = list(range(len(hist_divs), 0, -1))
                                 hist_df = pd.DataFrame({
                                     'Year': [f"T-{y}" for y in years_range],
-                                    'Dividend (₹)': hist_divs
+                                    'Dividend ({_ticker_csym})': hist_divs
                                 })
                                 st.dataframe(hist_df, use_container_width=True, hide_index=True)
                         
@@ -7312,15 +7312,15 @@ def main():
                         
                             # Dividend projections
                             div_df = pd.DataFrame(ddm_model['projections'])
-                            div_df['dividend'] = div_df['dividend'].apply(lambda x: f"₹{x:.2f}")
-                            div_df['pv_dividend'] = div_df['pv_dividend'].apply(lambda x: f"₹{x:.2f}")
+                            div_df['dividend'] = div_df['dividend'].apply(lambda x: f"{_ticker_csym}{x:.2f}")
+                            div_df['pv_dividend'] = div_df['pv_dividend'].apply(lambda x: f"{_ticker_csym}{x:.2f}")
                             st.dataframe(div_df, use_container_width=True)
                         
                             # DDM formula explanation
                             with st.expander("📖 DDM Formula & Assumptions"):
                                 st.latex(r"Value = \frac{D_1}{K_e - g}")
                                 st.write(f"Where:")
-                                st.write(f"- D₁ = Next year dividend = ₹{ddm_model['next_year_dps']:.2f}")
+                                st.write(f"- D₁ = Next year dividend = {_ticker_csym}{ddm_model['next_year_dps']:.2f}")
                                 st.write(f"- Kₑ = Cost of Equity = {cost_of_equity:.2f}%")
                                 st.write(f"- g = Dividend Growth Rate = {ddm_model['dividend_growth']:.2f}%")
                         else:
@@ -7329,8 +7329,8 @@ def main():
                     with tab4:
                         if pb_roe_model:
                             st.subheader("P/B with ROE Analysis")
-                            st.write(f"**Fair Value per Share:** ₹{pb_roe_model['value_per_share']:.2f}")
-                            st.write(f"**Book Value per Share:** ₹{pb_roe_model['book_value_per_share']:.2f}")
+                            st.write(f"**Fair Value per Share:** {_ticker_csym}{pb_roe_model['value_per_share']:.2f}")
+                            st.write(f"**Book Value per Share:** {_ticker_csym}{pb_roe_model['book_value_per_share']:.2f}")
                             st.write(f"**ROE:** {pb_roe_model['roe']:.2f}%")
                             st.write(f"**Cost of Equity:** {pb_roe_model['cost_of_equity']:.2f}%")
                             st.write(f"**Fair P/B Ratio:** {pb_roe_model['fair_pb_ratio']:.2f}x")
@@ -7372,8 +7372,8 @@ def main():
                                 st.caption(f"Range: {rel_val.get('sector_low_pb', 0):.1f}x - {rel_val.get('sector_high_pb', 0):.1f}x")
                         
                             with col3:
-                                st.metric("Fair Value (P/E)", f"₹{rel_val['fair_value_pe_based']:.2f}")
-                                st.metric("Fair Value (P/B)", f"₹{rel_val['fair_value_pb_based']:.2f}")
+                                st.metric("Fair Value (P/E)", f"{_ticker_csym}{rel_val['fair_value_pe_based']:.2f}")
+                                st.metric("Fair Value (P/B)", f"{_ticker_csym}{rel_val['fair_value_pb_based']:.2f}")
                         
                             st.markdown("---")
                         
@@ -7381,13 +7381,13 @@ def main():
                             st.subheader("Valuation Range Analysis")
                             col4, col5, col6 = st.columns(3)
                             with col4:
-                                st.metric("Conservative", f"₹{rel_val.get('conservative_value', 0):.2f}",
+                                st.metric("Conservative", f"{_ticker_csym}{rel_val.get('conservative_value', 0):.2f}",
                                          help="Based on 25th percentile peer P/E")
                             with col5:
-                                st.metric("Fair Value", f"₹{rel_val['avg_fair_value']:.2f}",
+                                st.metric("Fair Value", f"{_ticker_csym}{rel_val['avg_fair_value']:.2f}",
                                          help="Average of P/E and P/B based valuations")
                             with col6:
-                                st.metric("Aggressive", f"₹{rel_val.get('aggressive_value', 0):.2f}",
+                                st.metric("Aggressive", f"{_ticker_csym}{rel_val.get('aggressive_value', 0):.2f}",
                                          help="Based on 75th percentile peer P/E")
                         
                             # Peer comparison table
@@ -7395,7 +7395,7 @@ def main():
                                 st.markdown("---")
                                 st.subheader("Peer Comparison")
                                 peer_df = pd.DataFrame(rel_val['peer_data'])
-                                peer_df.columns = ['Ticker', 'Price (₹)', 'P/E', 'P/B']
+                                peer_df.columns = ['Ticker', 'Price ({_ticker_csym})', 'P/E', 'P/B']
                                 st.dataframe(peer_df, use_container_width=True, hide_index=True)
                         
                             # Interpretation
@@ -7463,7 +7463,7 @@ def main():
                                                 st.markdown("**Stock Price Summary**")
                                                 if stock_comp_data['stock_prices_df'] is not None:
                                                     price_df = stock_comp_data['stock_prices_df']
-                                                    st.metric("Latest Price", f"₹{price_df['Close'].iloc[-1]:.2f}")
+                                                    st.metric("Latest Price", f"{_ticker_csym}{price_df['Close'].iloc[-1]:.2f}")
                                                     st.metric("Period Return", f"{((price_df['Close'].iloc[-1] - price_df['Close'].iloc[0]) / price_df['Close'].iloc[0] * 100):.2f}%")
                                                     st.metric("Major Changes", f"{price_df['is_major'].sum()}" if 'is_major' in price_df.columns else "N/A")
                                                 else:
@@ -7485,10 +7485,10 @@ def main():
                             # Fair value display
                             col_dcf1, col_dcf2, col_dcf3, col_dcf4 = st.columns(4)
                             with col_dcf1:
-                                st.metric("Fair Value/Share", f"₹{bank_dcf_result['fair_value_per_share']:.2f}",
+                                st.metric("Fair Value/Share", f"{_ticker_csym}{bank_dcf_result['fair_value_per_share']:.2f}",
                                         delta=f"{((bank_dcf_result['fair_value_per_share'] - current_price) / current_price * 100):.1f}%" if current_price > 0 else None)
                             with col_dcf2:
-                                st.metric("Equity Value", f"₹{bank_dcf_result['equity_value']:,.0f} Lacs")
+                                st.metric("Equity Value", f"{_ticker_csym}{bank_dcf_result['equity_value']:,.0f} Lacs")
                             with col_dcf3:
                                 st.metric("Cost of Equity (Ke)", f"{bank_dcf_result['cost_of_equity']:.2f}%")
                             with col_dcf4:
@@ -7509,8 +7509,8 @@ def main():
                         
                             with col_proj2:
                                 st.markdown("**Valuation Components:**")
-                                st.write(f"• PV of FCFE (5Y): ₹{bank_dcf_result['sum_pv_fcfe']:,.0f} Lacs")
-                                st.write(f"• PV of Terminal: ₹{bank_dcf_result['terminal_value_pv']:,.0f} Lacs")
+                                st.write(f"• PV of FCFE (5Y): {_ticker_csym}{bank_dcf_result['sum_pv_fcfe']:,.0f} Lacs")
+                                st.write(f"• PV of Terminal: {_ticker_csym}{bank_dcf_result['terminal_value_pv']:,.0f} Lacs")
                                 st.write(f"• Sustainable Growth: {bank_dcf_result['sustainable_growth']:.2f}%")
                         
                             st.markdown("---")
@@ -7522,14 +7522,14 @@ def main():
                                 # Create detailed projection table
                                 proj_data = {
                                     'Year': projections_bank['year'],
-                                    'Revenue': [f"₹{rev:,.0f}" for rev in projections_bank['revenue']],
-                                    'PAT': [f"₹{pat:,.0f}" for pat in projections_bank['pat']],
-                                    'FCFE': [f"₹{fcfe:,.0f}" for fcfe in projections_bank['fcfe']],
+                                    'Revenue': [f"{_ticker_csym}{rev:,.0f}" for rev in projections_bank['revenue']],
+                                    'PAT': [f"{_ticker_csym}{pat:,.0f}" for pat in projections_bank['pat']],
+                                    'FCFE': [f"{_ticker_csym}{fcfe:,.0f}" for fcfe in projections_bank['fcfe']],
                                 }
                             
                                 # Add PV of FCFE
                                 if 'pv_fcfe_by_year' in bank_dcf_result:
-                                    proj_data['PV of FCFE'] = [f"₹{pv:,.0f}" for pv in bank_dcf_result['pv_fcfe_by_year']]
+                                    proj_data['PV of FCFE'] = [f"{_ticker_csym}{pv:,.0f}" for pv in bank_dcf_result['pv_fcfe_by_year']]
                             
                                 proj_df = pd.DataFrame(proj_data)
                                 st.dataframe(proj_df, use_container_width=True, hide_index=True)
@@ -7688,7 +7688,7 @@ def main():
                     dcf_projections=projections  # ✅ PASS EXISTING PROJECTIONS - NO DUPLICATION!
                 )
                 if ddm_result and isinstance(ddm_result, dict) and 'value_per_share' in ddm_result:
-                    st.success(f"✅ DDM Fair Value: ₹{ddm_result['value_per_share']:.2f}")
+                    st.success(f"✅ DDM Fair Value: {_ticker_csym}{ddm_result['value_per_share']:.2f}")
                     if ddm_result.get('using_dcf_projections'):
                         st.caption("💡 Using DCF projected NOPAT for dividend projections")
                 else:
@@ -7709,7 +7709,7 @@ def main():
                     dcf_projections=projections  # ✅ PASS EXISTING PROJECTIONS - NO DUPLICATION!
                 )
                 if rim_result and isinstance(rim_result, dict) and 'value_per_share' in rim_result:
-                    st.success(f"✅ RIM Fair Value: ₹{rim_result['value_per_share']:.2f}")
+                    st.success(f"✅ RIM Fair Value: {_ticker_csym}{rim_result['value_per_share']:.2f}")
                     if rim_result.get('using_dcf_projections'):
                         st.caption("💡 Using DCF projected NOPAT as Net Income")
                 else:
@@ -7787,14 +7787,14 @@ def main():
                 
                 col1, col2, col3, col4, col5, col6 = st.columns(6)
                 with col1:
-                    st.metric("📊 Current Price", f"₹ {current_price:.2f}")
+                    st.metric("📊 Current Price", f"{_ticker_csym} {current_price:.2f}")
                 with col2:
-                    st.metric("🎯 Fair Value (DCF)", f"₹ {valuation['fair_value_per_share']:.2f}",
+                    st.metric("🎯 Fair Value (DCF)", f"{_ticker_csym} {valuation['fair_value_per_share']:.2f}",
                              delta=f"{((valuation['fair_value_per_share'] - current_price) / current_price * 100):.1f}%")
                 with col3:
                     st.metric("Current P/E", f"{current_pe:.2f}x" if current_pe > 0 else "N/A")
                 with col4:
-                    st.metric("Current EPS", f"₹ {current_eps:.2f}" if current_eps > 0 else "N/A")
+                    st.metric("Current EPS", f"{_ticker_csym} {current_eps:.2f}" if current_eps > 0 else "N/A")
                 with col5:
                     st.metric("WACC", f"{wacc_details['wacc']:.2f}%")
                 with col6:
@@ -7810,10 +7810,10 @@ def main():
                     col_fpe1, col_fpe2, col_fpe3, col_fpe4, col_fpe5 = st.columns(5)
                 
                     with col_fpe1:
-                        st.metric("Current EPS", f"₹{fpe.get('current_eps', 0):.2f}")
+                        st.metric("Current EPS", f"{_ticker_csym}{fpe.get('current_eps', 0):.2f}")
                 
                     with col_fpe2:
-                        st.metric("Forward EPS (12M)", f"₹{fpe['forward_eps']:.2f}",
+                        st.metric("Forward EPS (12M)", f"{_ticker_csym}{fpe['forward_eps']:.2f}",
                                 delta=f"+{fpe.get('earnings_growth_rate', 0):.1f}%",
                                 help="Projected EPS for next 12 months")
                 
@@ -7821,11 +7821,11 @@ def main():
                         st.metric("Peer Avg P/E", f"{comp_results['multiples_stats']['pe']['average']:.2f}x" if 'pe' in comp_results['multiples_stats'] else "N/A")
                 
                     with col_fpe4:
-                        st.metric("Forward Fair Value (Avg)", f"₹{fpe['fair_value_avg']:.2f}",
+                        st.metric("Forward Fair Value (Avg)", f"{_ticker_csym}{fpe['fair_value_avg']:.2f}",
                                 delta=f"{((fpe['fair_value_avg'] - current_price) / current_price * 100):.1f}%" if current_price > 0 else None)
                 
                     with col_fpe5:
-                        st.metric("Forward Fair Value (Median)", f"₹{fpe['fair_value_median']:.2f}",
+                        st.metric("Forward Fair Value (Median)", f"{_ticker_csym}{fpe['fair_value_median']:.2f}",
                                 delta=f"{((fpe['fair_value_median'] - current_price) / current_price * 100):.1f}%" if current_price > 0 else None)
                 
                     st.caption(f"💡 {fpe.get('calculation_note', 'Forward EPS projected using historical growth')}")
@@ -7896,11 +7896,11 @@ def main():
                             y=valuation_methods,
                             x=fair_values,
                             marker_color=colors,
-                            text=[f"₹{v:.2f}" for v in fair_values],
+                            text=[f"{_ticker_csym}{v:.2f}" for v in fair_values],
                             textposition='outside',
                             orientation='h',
                             name='Fair Value',
-                            hovertemplate='<b>%{y}</b><br>Fair Value: ₹%{x:.2f}<extra></extra>'
+                            hovertemplate='<b>%{y}</b><br>Fair Value: {_ticker_csym}%{x:.2f}<extra></extra>'
                         ))
                     
                         # Add red line for current price
@@ -7909,7 +7909,7 @@ def main():
                             line_dash="dash",
                             line_color="red",
                             line_width=3,
-                            annotation_text=f"Current Price: ₹{current_price:.2f}",
+                            annotation_text=f"Current Price: {_ticker_csym}{current_price:.2f}",
                             annotation_position="top right"
                         )
                     
@@ -7920,7 +7920,7 @@ def main():
                             line_dash="dot",
                             line_color="green",
                             line_width=2,
-                            annotation_text=f"Average: ₹{avg_fair_value:.2f}",
+                            annotation_text=f"Average: {_ticker_csym}{avg_fair_value:.2f}",
                             annotation_position="bottom right"
                         )
                     
@@ -7930,7 +7930,7 @@ def main():
                                 'x': 0.5,
                                 'xanchor': 'center'
                             },
-                            xaxis_title="Fair Value (₹)",
+                            xaxis_title="Fair Value ({_ticker_csym})",
                             yaxis_title="Valuation Method",
                             height=max(400, len(valuation_methods) * 60),
                             showlegend=False,
@@ -7946,18 +7946,18 @@ def main():
                         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
                     
                         with col_stat1:
-                            st.metric("Average Fair Value", f"₹{avg_fair_value:.2f}",
+                            st.metric("Average Fair Value", f"{_ticker_csym}{avg_fair_value:.2f}",
                                     delta=f"{((avg_fair_value - current_price) / current_price * 100):.1f}%" if current_price > 0 else None)
                     
                         with col_stat2:
                             median_fv = np.median(fair_values)
-                            st.metric("Median Fair Value", f"₹{median_fv:.2f}",
+                            st.metric("Median Fair Value", f"{_ticker_csym}{median_fv:.2f}",
                                     delta=f"{((median_fv - current_price) / current_price * 100):.1f}%" if current_price > 0 else None)
                     
                         with col_stat3:
                             max_fv = max(fair_values)
                             min_fv = min(fair_values)
-                            st.metric("Range", f"₹{min_fv:.2f} - ₹{max_fv:.2f}")
+                            st.metric("Range", f"{_ticker_csym}{min_fv:.2f} - {_ticker_csym}{max_fv:.2f}")
                     
                         with col_stat4:
                             consensus = "🔴 Overvalued" if current_price > avg_fair_value else "🟢 Undervalued"
@@ -7969,13 +7969,13 @@ def main():
                         st.markdown("---")
                         st.markdown("**💡 Interpretation:**")
                         if current_price < min_fv:
-                            st.success(f"✅ **Strong Buy Signal**: Current price (₹{current_price:.2f}) is below ALL valuation methods. Significant upside potential.")
+                            st.success(f"✅ **Strong Buy Signal**: Current price ({_ticker_csym}{current_price:.2f}) is below ALL valuation methods. Significant upside potential.")
                         elif current_price > max_fv:
-                            st.error(f"⚠️ **Overvalued**: Current price (₹{current_price:.2f}) exceeds ALL valuation methods. Consider taking profits.")
+                            st.error(f"⚠️ **Overvalued**: Current price ({_ticker_csym}{current_price:.2f}) exceeds ALL valuation methods. Consider taking profits.")
                         elif current_price < avg_fair_value:
-                            st.info(f"📈 **Undervalued**: Current price (₹{current_price:.2f}) is below average fair value. Potential upside of {((avg_fair_value - current_price) / current_price * 100):.1f}%")
+                            st.info(f"📈 **Undervalued**: Current price ({_ticker_csym}{current_price:.2f}) is below average fair value. Potential upside of {((avg_fair_value - current_price) / current_price * 100):.1f}%")
                         else:
-                            st.warning(f"📉 **Fairly Valued to Overvalued**: Current price (₹{current_price:.2f}) is at or above average fair value.")
+                            st.warning(f"📉 **Fairly Valued to Overvalued**: Current price ({_ticker_csym}{current_price:.2f}) is at or above average fair value.")
                 
                     else:
                         st.info("💡 Complete more valuation methods to see comprehensive comparison chart")
@@ -8298,7 +8298,7 @@ def main():
                                         eq_val = ev - valuation['net_debt']
                                         eq_val_rupees = eq_val * 100000
                                         fv = eq_val_rupees / shares if shares > 0 else 0
-                                        row_data[f"g={g_val:.1f}%"] = f"₹{fv:.2f}"
+                                        row_data[f"g={g_val:.1f}%"] = f"{_ticker_csym}{fv:.2f}"
                                     except:
                                         row_data[f"g={g_val:.1f}%"] = "Error"
                             sensitivity_data.append(row_data)
@@ -8490,10 +8490,10 @@ def main():
                         # Top metrics
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
-                            st.metric("Fair Value/Share", f"₹{ddm_result.get('value_per_share', 0):.2f}",
+                            st.metric("Fair Value/Share", f"{_ticker_csym}{ddm_result.get('value_per_share', 0):.2f}",
                                     delta=f"{((ddm_result.get('value_per_share', 0) - current_price) / current_price * 100):.1f}%" if current_price > 0 else None)
                         with col2:
-                            st.metric("Current DPS", f"₹{ddm_result.get('current_dps', 0):.2f}")
+                            st.metric("Current DPS", f"{_ticker_csym}{ddm_result.get('current_dps', 0):.2f}")
                         with col3:
                             st.metric("Dividend Growth", f"{ddm_result.get('dividend_growth', 0):.1f}%")
                         with col4:
@@ -8505,8 +8505,8 @@ def main():
                     
                         with col_a:
                             st.markdown("**📊 Model Parameters**")
-                            st.write(f"• **Current Dividend per Share:** ₹{ddm_result.get('current_dps', 0):.2f}")
-                            st.write(f"• **Next Year DPS (D1):** ₹{ddm_result.get('next_year_dps', 0):.2f}")
+                            st.write(f"• **Current Dividend per Share:** {_ticker_csym}{ddm_result.get('current_dps', 0):.2f}")
+                            st.write(f"• **Next Year DPS (D1):** {_ticker_csym}{ddm_result.get('next_year_dps', 0):.2f}")
                             st.write(f"• **Dividend Growth Rate:** {ddm_result.get('dividend_growth', 0):.2f}%")
                             st.write(f"• **Required Return (Ke):** {ddm_result.get('required_return', 0):.2f}%")
                             st.write(f"• **Payout Ratio:** {ddm_result.get('payout_ratio', 0):.1f}%")
@@ -8528,8 +8528,8 @@ def main():
                         
                             # Better formatted definitions with boxes
                             st.markdown(f"""
-                            - **P₀** (Fair Value per Share) = **₹{ddm_result.get('value_per_share', 0):.2f}**
-                            - **D₁** (Next Year Dividend) = ₹{ddm_result.get('next_year_dps', 0):.2f}
+                            - **P₀** (Fair Value per Share) = **{_ticker_csym}{ddm_result.get('value_per_share', 0):.2f}**
+                            - **D₁** (Next Year Dividend) = {_ticker_csym}{ddm_result.get('next_year_dps', 0):.2f}
                             - **r** (Required Return/Cost of Equity) = {ddm_result.get('required_return', 0):.2f}%
                             - **g** (Dividend Growth Rate) = {ddm_result.get('dividend_growth', 0):.2f}%
                             """)
@@ -8540,9 +8540,9 @@ def main():
                             st.markdown("**💡 Calculation:**")
                             st.code(f"""
     Fair Value = D₁ / (r - g)
-               = ₹{ddm_result.get('next_year_dps', 0):.2f} / ({ddm_result.get('required_return', 0):.2f}% - {ddm_result.get('dividend_growth', 0):.2f}%)
-               = ₹{ddm_result.get('next_year_dps', 0):.2f} / {(ddm_result.get('required_return', 10) - ddm_result.get('dividend_growth', 5)):.2f}%
-               = ₹{calc_fv:.2f}
+               = {_ticker_csym}{ddm_result.get('next_year_dps', 0):.2f} / ({ddm_result.get('required_return', 0):.2f}% - {ddm_result.get('dividend_growth', 0):.2f}%)
+               = {_ticker_csym}{ddm_result.get('next_year_dps', 0):.2f} / {(ddm_result.get('required_return', 10) - ddm_result.get('dividend_growth', 5)):.2f}%
+               = {_ticker_csym}{calc_fv:.2f}
                                 """, language="text")
                         
                             # 5-year dividend projections
@@ -8556,15 +8556,15 @@ def main():
                                 if 'source' in proj_df.columns:
                                     proj_display = pd.DataFrame({
                                         'Year': proj_df['year'],
-                                        'Dividend per Share': proj_df['dividend'].apply(lambda x: f"₹{x:.2f}"),
-                                        'PV of Dividend': proj_df['pv_dividend'].apply(lambda x: f"₹{x:.2f}"),
+                                        'Dividend per Share': proj_df['dividend'].apply(lambda x: f"{_ticker_csym}{x:.2f}"),
+                                        'PV of Dividend': proj_df['pv_dividend'].apply(lambda x: f"{_ticker_csym}{x:.2f}"),
                                         'Source': proj_df['source']
                                     })
                                 else:
                                     proj_display = pd.DataFrame({
                                         'Year': proj_df['year'],
-                                        'Dividend per Share': proj_df['dividend'].apply(lambda x: f"₹{x:.2f}"),
-                                        'PV of Dividend': proj_df['pv_dividend'].apply(lambda x: f"₹{x:.2f}")
+                                        'Dividend per Share': proj_df['dividend'].apply(lambda x: f"{_ticker_csym}{x:.2f}"),
+                                        'PV of Dividend': proj_df['pv_dividend'].apply(lambda x: f"{_ticker_csym}{x:.2f}")
                                     })
                             
                                 st.dataframe(proj_display, use_container_width=True, hide_index=True)
@@ -8573,7 +8573,7 @@ def main():
                                 st.markdown("---")
                                 st.markdown("**📊 Historical Dividends**")
                                 hist_divs = ddm_result['historical_dividends']
-                                st.write(f"Recent dividend history: {', '.join([f'₹{d:.2f}' for d in hist_divs])}")
+                                st.write(f"Recent dividend history: {', '.join([f'{_ticker_csym}{d:.2f}' for d in hist_divs])}")
                         
                             # When to use DDM
                             st.markdown("---")
@@ -8603,15 +8603,15 @@ def main():
                         # RIM Section with COMPLETE transparency
                         if rim_result and rim_result.get('value_per_share', 0) > 0:
                             # Top-level result
-                            st.success(f"### 🎯 Fair Value per Share (RIM): ₹{rim_result['value_per_share']:.2f}")
+                            st.success(f"### 🎯 Fair Value per Share (RIM): {_ticker_csym}{rim_result['value_per_share']:.2f}")
                             
                             # Top metrics
                             col1, col2, col3, col4 = st.columns(4)
                             with col1:
-                                st.metric("Fair Value/Share", f"₹{rim_result['value_per_share']:.2f}",
+                                st.metric("Fair Value/Share", f"{_ticker_csym}{rim_result['value_per_share']:.2f}",
                                         delta=f"{((rim_result['value_per_share'] - current_price) / current_price * 100):.1f}%" if current_price > 0 else None)
                             with col2:
-                                st.metric("Book Value/Share", f"₹{rim_result['book_value_per_share']:.2f}")
+                                st.metric("Book Value/Share", f"{_ticker_csym}{rim_result['book_value_per_share']:.2f}")
                             with col3:
                                 st.metric("ROE", f"{rim_result['roe']:.2f}%")
                             with col4:
@@ -8637,8 +8637,8 @@ def main():
                             with col_formula2:
                                 st.markdown("**Where:**")
                                 st.markdown(f"""
-                                - **P₀** = Fair Value per Share = **₹{rim_result['value_per_share']:.2f}**
-                                - **BV₀** = Current Book Value = **₹{rim_result['current_book_value']:,.0f}**
+                                - **P₀** = Fair Value per Share = **{_ticker_csym}{rim_result['value_per_share']:.2f}**
+                                - **BV₀** = Current Book Value = **{_ticker_csym}{rim_result['current_book_value']:,.0f}**
                                 - **RI** = Residual Income (excess return)
                                 - **NI** = Net Income (projected)
                                 - **r** = Cost of Equity = **{rim_result['cost_of_equity']:.2f}%**
@@ -8655,9 +8655,9 @@ def main():
                             
                             with col_input1:
                                 st.markdown("**Current State:**")
-                                st.write(f"• Book Value (Total): ₹{rim_result['current_book_value']:,.0f}")
-                                st.write(f"• Book Value/Share: ₹{rim_result['book_value_per_share']:.2f}")
-                                st.write(f"• Current EPS: ₹{rim_result['current_eps']:.2f}")
+                                st.write(f"• Book Value (Total): {_ticker_csym}{rim_result['current_book_value']:,.0f}")
+                                st.write(f"• Book Value/Share: {_ticker_csym}{rim_result['book_value_per_share']:.2f}")
+                                st.write(f"• Current EPS: {_ticker_csym}{rim_result['current_eps']:.2f}")
                                 st.write(f"• Number of Shares: {shares:,.0f}")
                             
                             with col_input2:
@@ -8707,12 +8707,12 @@ def main():
                                     
                                     proj_data.append({
                                         'Year': f"Year {year}",
-                                        'Book Value (₹ Lacs)': f"{bv_year:.2f}",
-                                        'Net Income (₹ Lacs)': f"{ni_year:.2f}",
-                                        'Required Return (₹ Lacs)': f"{req_return:.2f}",
-                                        'Residual Income (₹ Lacs)': f"{ri_year:.2f}",
+                                        'Book Value ({_ticker_csym} Lacs)': f"{bv_year:.2f}",
+                                        'Net Income ({_ticker_csym} Lacs)': f"{ni_year:.2f}",
+                                        'Required Return ({_ticker_csym} Lacs)': f"{req_return:.2f}",
+                                        'Residual Income ({_ticker_csym} Lacs)': f"{ri_year:.2f}",
                                         'Discount Factor': f"{1 / ((1 + rim_result['cost_of_equity']/100) ** year):.4f}",
-                                        'PV of RI (₹ Lacs)': f"{pv_ri_year:.2f}"
+                                        'PV of RI ({_ticker_csym} Lacs)': f"{pv_ri_year:.2f}"
                                     })
                                 
                                 # Display table
@@ -8731,14 +8731,14 @@ def main():
                                     y=ri_list,
                                     name='Residual Income',
                                     marker_color=colors,
-                                    text=[f"₹{ri:.2f}" for ri in ri_list],
+                                    text=[f"{_ticker_csym}{ri:.2f}" for ri in ri_list],
                                     textposition='outside'
                                 ))
                                 
                                 fig_ri.update_layout(
-                                    title="Residual Income by Year (₹ Lacs)",
+                                    title="Residual Income by Year ({_ticker_csym} Lacs)",
                                     xaxis_title="Year",
-                                    yaxis_title="Residual Income (₹ Lacs)",
+                                    yaxis_title="Residual Income ({_ticker_csym} Lacs)",
                                     height=320,
                                     showlegend=False,
                                     hovermode='x unified'
@@ -8756,14 +8756,14 @@ def main():
                                     y=pv_ri_list,
                                     name='PV of RI',
                                     marker_color='#2E86AB',
-                                    text=[f"₹{pv:.2f}" for pv in pv_ri_list],
+                                    text=[f"{_ticker_csym}{pv:.2f}" for pv in pv_ri_list],
                                     textposition='outside'
                                 ))
                                 
                                 fig_pv.update_layout(
-                                    title="Present Value Contribution by Year (₹ Lacs)",
+                                    title="Present Value Contribution by Year ({_ticker_csym} Lacs)",
                                     xaxis_title="Year",
-                                    yaxis_title="PV of RI (₹ Lacs)",
+                                    yaxis_title="PV of RI ({_ticker_csym} Lacs)",
                                     height=320,
                                     showlegend=False
                                 )
@@ -8790,20 +8790,20 @@ YEAR {year} CALCULATIONS:
 {'='*60}
 
 Step 1: Book Value
-    Book Value (Year {year}) = ₹{bv_year:.2f} Lacs
+    Book Value (Year {year}) = {_ticker_csym}{bv_year:.2f} Lacs
 
 Step 2: Net Income  
-    Net Income (Year {year}) = ₹{ni_year:.2f} Lacs
+    Net Income (Year {year}) = {_ticker_csym}{ni_year:.2f} Lacs
 
 Step 3: Required Return (Equity Charge)
     Required Return = Book Value × Cost of Equity
-                   = ₹{bv_year:.2f} × {rim_result['cost_of_equity']:.2f}%
-                   = ₹{req_ret_year:.2f} Lacs
+                   = {_ticker_csym}{bv_year:.2f} × {rim_result['cost_of_equity']:.2f}%
+                   = {_ticker_csym}{req_ret_year:.2f} Lacs
 
 Step 4: Residual Income (Excess Profit)
     Residual Income = Net Income - Required Return
-                   = ₹{ni_year:.2f} - ₹{req_ret_year:.2f}
-                   = ₹{ri_year:.2f} Lacs
+                   = {_ticker_csym}{ni_year:.2f} - {_ticker_csym}{req_ret_year:.2f}
+                   = {_ticker_csym}{ri_year:.2f} Lacs
     
     {'✅ CREATING VALUE' if ri_year > 0 else '⚠️ DESTROYING VALUE'} - {'Company earns more than required return' if ri_year > 0 else 'Company earns less than required return'}
 
@@ -8813,11 +8813,11 @@ Step 5: Present Value (Discount to Today)
                    = {discount_factor:.4f}
     
     PV of RI = Residual Income × Discount Factor
-            = ₹{ri_year:.2f} × {discount_factor:.4f}
-            = ₹{pv_ri_year:.2f} Lacs
+            = {_ticker_csym}{ri_year:.2f} × {discount_factor:.4f}
+            = {_ticker_csym}{pv_ri_year:.2f} Lacs
 
 {'='*60}
-CONTRIBUTION TO FAIR VALUE: ₹{pv_ri_year:.2f} Lacs
+CONTRIBUTION TO FAIR VALUE: {_ticker_csym}{pv_ri_year:.2f} Lacs
                                         """, language="text")
                                 
                                 # TERMINAL VALUE CALCULATION
@@ -8832,18 +8832,18 @@ TERMINAL VALUE (Beyond Year 5):
 {'='*60}
 
 Step 1: Terminal Year Residual Income
-    RI (Year 5) = ₹{last_ri:.2f} Lacs
+    RI (Year 5) = {_ticker_csym}{last_ri:.2f} Lacs
 
 Step 2: Grow at Terminal Growth Rate
     RI (Year 6) = RI (Year 5) × (1 + g)
-                = ₹{last_ri:.2f} × (1 + {rim_result['terminal_growth']/100:.4f})
-                = ₹{last_ri * (1 + rim_result['terminal_growth']/100):.2f} Lacs
+                = {_ticker_csym}{last_ri:.2f} × (1 + {rim_result['terminal_growth']/100:.4f})
+                = {_ticker_csym}{last_ri * (1 + rim_result['terminal_growth']/100):.2f} Lacs
 
 Step 3: Perpetuity Value (Gordon Growth Model)
     Terminal Value = RI (Year 6) / (Ke - g)
-                  = ₹{last_ri * (1 + rim_result['terminal_growth']/100):.2f} / ({rim_result['cost_of_equity']:.2f}% - {rim_result['terminal_growth']:.2f}%)
-                  = ₹{last_ri * (1 + rim_result['terminal_growth']/100):.2f} / {rim_result['cost_of_equity'] - rim_result['terminal_growth']:.2f}%
-                  = ₹{(last_ri * (1 + rim_result['terminal_growth']/100)) / ((rim_result['cost_of_equity'] - rim_result['terminal_growth']) / 100):.2f} Lacs
+                  = {_ticker_csym}{last_ri * (1 + rim_result['terminal_growth']/100):.2f} / ({rim_result['cost_of_equity']:.2f}% - {rim_result['terminal_growth']:.2f}%)
+                  = {_ticker_csym}{last_ri * (1 + rim_result['terminal_growth']/100):.2f} / {rim_result['cost_of_equity'] - rim_result['terminal_growth']:.2f}%
+                  = {_ticker_csym}{(last_ri * (1 + rim_result['terminal_growth']/100)) / ((rim_result['cost_of_equity'] - rim_result['terminal_growth']) / 100):.2f} Lacs
 
 Step 4: Discount to Present Value
     Discount Factor = 1 / (1 + Ke)^5
@@ -8851,11 +8851,11 @@ Step 4: Discount to Present Value
                    = {1 / ((1 + rim_result['cost_of_equity']/100) ** 5):.4f}
     
     PV of Terminal Value = TV × Discount Factor
-                        = ₹{(last_ri * (1 + rim_result['terminal_growth']/100)) / ((rim_result['cost_of_equity'] - rim_result['terminal_growth']) / 100):.2f} × {1 / ((1 + rim_result['cost_of_equity']/100) ** 5):.4f}
-                        = ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
+                        = {_ticker_csym}{(last_ri * (1 + rim_result['terminal_growth']/100)) / ((rim_result['cost_of_equity'] - rim_result['terminal_growth']) / 100):.2f} × {1 / ((1 + rim_result['cost_of_equity']/100) ** 5):.4f}
+                        = {_ticker_csym}{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
 
 {'='*60}
-TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
+TERMINAL VALUE CONTRIBUTION: {_ticker_csym}{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                     """, language="text")
                             
                             st.markdown("---")
@@ -8875,7 +8875,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                 measure=["absolute", "relative", "relative", "total"],
                                 x=["Book Value<br>per Share", "PV of RI<br>(Years 1-5)", "Terminal<br>Value", "Fair Value<br>per Share"],
                                 textposition="outside",
-                                text=[f"₹{rim_result['book_value_per_share']:.2f}", f"₹{pv_ri_per_share:.2f}", f"₹{tv_per_share:.2f}", f"₹{rim_result['value_per_share']:.2f}"],
+                                text=[f"{_ticker_csym}{rim_result['book_value_per_share']:.2f}", f"{_ticker_csym}{pv_ri_per_share:.2f}", f"{_ticker_csym}{tv_per_share:.2f}", f"{_ticker_csym}{rim_result['value_per_share']:.2f}"],
                                 y=[rim_result['book_value_per_share'], pv_ri_per_share, tv_per_share, rim_result['value_per_share']],
                                 connector={"line": {"color": "rgb(63, 63, 63)"}},
                                 decreasing={"marker": {"color": "#E63946"}},
@@ -8884,10 +8884,10 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                             ))
                             
                             fig_waterfall.update_layout(
-                                title="Fair Value Build-Up (₹ per Share)",
+                                title="Fair Value Build-Up ({_ticker_csym} per Share)",
                                 showlegend=False,
                                 height=380,
-                                yaxis_title="Value (₹)"
+                                yaxis_title="Value ({_ticker_csym})"
                             )
                             
                             st.plotly_chart(fig_waterfall, use_container_width=True)
@@ -8908,7 +8908,7 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                     marker=dict(colors=['#2E86AB', '#E63946', '#F4D35E']),
                                     textinfo='label+percent',
                                     texttemplate='<b>%{label}</b><br>%{percent}',
-                                    hovertemplate='<b>%{label}</b><br>₹%{value:.2f} (absolute)<extra></extra>'
+                                    hovertemplate='<b>%{label}</b><br>{_ticker_csym}%{value:.2f} (absolute)<extra></extra>'
                                 )])
                                 
                                 fig_pie.update_layout(
@@ -8933,13 +8933,13 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                     x=components,
                                     y=values,
                                     marker_color=colors_signed,
-                                    text=[f"₹{v:.2f}" for v in values],
+                                    text=[f"{_ticker_csym}{v:.2f}" for v in values],
                                     textposition='outside'
                                 ))
                                 
                                 fig_bar.update_layout(
                                     title="Fair Value Components (Actual Signed Values)",
-                                    yaxis_title="Value per Share (₹)",
+                                    yaxis_title="Value per Share ({_ticker_csym})",
                                     height=320,
                                     showlegend=False
                                 )
@@ -8953,12 +8953,12 @@ TERMINAL VALUE CONTRIBUTION: ₹{rim_result['terminal_ri_pv'] / 100000:.2f} Lacs
                                     values=[rim_result['book_value_per_share'], pv_ri_per_share, tv_per_share],
                                     marker=dict(colors=['#2E86AB', '#06A77D', '#F4D35E']),
                                     textinfo='label+percent+value',
-                                    texttemplate='<b>%{label}</b><br>%{percent}<br>₹%{value:.2f}',
-                                    hovertemplate='<b>%{label}</b><br>₹%{value:.2f}<br>%{percent}<extra></extra>'
+                                    texttemplate='<b>%{label}</b><br>%{percent}<br>{_ticker_csym}%{value:.2f}',
+                                    hovertemplate='<b>%{label}</b><br>{_ticker_csym}%{value:.2f}<br>%{percent}<extra></extra>'
                                 )])
                                 
                                 fig_pie.update_layout(
-                                    title="Fair Value Composition (₹ per Share)",
+                                    title="Fair Value Composition ({_ticker_csym} per Share)",
                                     height=380
                                 )
                                 
@@ -8973,27 +8973,27 @@ FAIR VALUE CALCULATION (Per Share Basis):
 ==========================================
 
 Starting Point:
-    Current Book Value/Share              = ₹{rim_result['book_value_per_share']:.2f}
+    Current Book Value/Share              = {_ticker_csym}{rim_result['book_value_per_share']:.2f}
 
 Add: Present Value of Residual Income (Years 1-5)
-    Sum of PV(RI) per Share               = ₹{pv_ri_per_share:.2f}
+    Sum of PV(RI) per Share               = {_ticker_csym}{pv_ri_per_share:.2f}
 
 Add: Terminal Value
-    PV of Terminal RI per Share           = ₹{tv_per_share:.2f}
+    PV of Terminal RI per Share           = {_ticker_csym}{tv_per_share:.2f}
 
 ==========================================
-FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2f}
+FAIR VALUE PER SHARE                      = {_ticker_csym}{rim_result['value_per_share']:.2f}
                                 """, language="text")
                             
                             with col_buildup2:
                                 st.markdown("**Total Equity Value:**")
-                                st.write(f"• Book Value: ₹{rim_result['current_book_value']/100000:.2f} Lacs")
-                                st.write(f"• PV of RI (5Y): ₹{rim_result['sum_pv_ri']/100000:.2f} Lacs")
-                                st.write(f"• Terminal Value: ₹{rim_result['terminal_ri_pv']/100000:.2f} Lacs")
-                                st.write(f"• **Total**: ₹{rim_result['total_equity_value']/100000:.2f} Lacs")
+                                st.write(f"• Book Value: {_ticker_csym}{rim_result['current_book_value']/100000:.2f} Lacs")
+                                st.write(f"• PV of RI (5Y): {_ticker_csym}{rim_result['sum_pv_ri']/100000:.2f} Lacs")
+                                st.write(f"• Terminal Value: {_ticker_csym}{rim_result['terminal_ri_pv']/100000:.2f} Lacs")
+                                st.write(f"• **Total**: {_ticker_csym}{rim_result['total_equity_value']/100000:.2f} Lacs")
                                 st.write("")
                                 st.write(f"÷ Shares: {shares:,.0f}")
-                                st.success(f"**= ₹{rim_result['value_per_share']:.2f} per share**")
+                                st.success(f"**= {_ticker_csym}{rim_result['value_per_share']:.2f} per share**")
                             
                             st.markdown("---")
                             
@@ -9010,9 +9010,9 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                     ri_pct = (pv_ri_per_share / total_value) * 100
                                     tv_pct = (tv_per_share / total_value) * 100
                                     
-                                    st.write(f"• Book Value: {bv_pct:.1f}% (₹{rim_result['book_value_per_share']:.2f})")
-                                    st.write(f"• RI (5 Years): {ri_pct:.1f}% (₹{pv_ri_per_share:.2f})")
-                                    st.write(f"• Terminal Value: {tv_pct:.1f}% (₹{tv_per_share:.2f})")
+                                    st.write(f"• Book Value: {bv_pct:.1f}% ({_ticker_csym}{rim_result['book_value_per_share']:.2f})")
+                                    st.write(f"• RI (5 Years): {ri_pct:.1f}% ({_ticker_csym}{pv_ri_per_share:.2f})")
+                                    st.write(f"• Terminal Value: {tv_pct:.1f}% ({_ticker_csym}{tv_per_share:.2f})")
                             
                             with col_insight2:
                                 st.markdown("**Economic Profit:**")
@@ -9038,10 +9038,10 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                                 # Build display with source column if available
                                 display_dict = {
                                     'Year': proj_df['year'],
-                                    'Book Value': proj_df['book_value'].apply(lambda x: f"₹{x:,.0f}"),
-                                    'Net Income': proj_df['net_income'].apply(lambda x: f"₹{x:,.0f}"),
-                                    'Residual Income': proj_df['residual_income'].apply(lambda x: f"₹{x:,.0f}"),
-                                    'PV of RI': proj_df['pv_ri'].apply(lambda x: f"₹{x:,.0f}")
+                                    'Book Value': proj_df['book_value'].apply(lambda x: f"{_ticker_csym}{x:,.0f}"),
+                                    'Net Income': proj_df['net_income'].apply(lambda x: f"{_ticker_csym}{x:,.0f}"),
+                                    'Residual Income': proj_df['residual_income'].apply(lambda x: f"{_ticker_csym}{x:,.0f}"),
+                                    'PV of RI': proj_df['pv_ri'].apply(lambda x: f"{_ticker_csym}{x:,.0f}")
                                 }
                             
                                 if 'source' in proj_df.columns:
@@ -9051,7 +9051,7 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                             
                                 st.dataframe(proj_display, use_container_width=True, hide_index=True)
                             
-                                st.caption(f"Sum of PV(RI): ₹{rim_result['sum_pv_ri']:,.0f} | Terminal Value PV: ₹{rim_result['terminal_ri_pv']:,.0f}")
+                                st.caption(f"Sum of PV(RI): {_ticker_csym}{rim_result['sum_pv_ri']:,.0f} | Terminal Value PV: {_ticker_csym}{rim_result['terminal_ri_pv']:,.0f}")
                         
                             # When to use RIM
                             st.markdown("---")
@@ -9928,11 +9928,11 @@ FAIR VALUE PER SHARE                      = ₹{rim_result['value_per_share']:.2
                     # Key Metrics
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Enterprise Value", f"₹ {valuation['enterprise_value']:.2f} Lacs")
+                        st.metric("Enterprise Value", f"{_ticker_csym} {valuation['enterprise_value']:.2f} Lacs")
                     with col2:
-                        st.metric("Equity Value", f"₹ {valuation['equity_value']:.2f} Lacs")
+                        st.metric("Equity Value", f"{_ticker_csym} {valuation['equity_value']:.2f} Lacs")
                     with col3:
-                        st.metric("Fair Value/Share", f"₹ {valuation['fair_value_per_share']:.2f}")
+                        st.metric("Fair Value/Share", f"{_ticker_csym} {valuation['fair_value_per_share']:.2f}")
                     with col4:
                         st.metric("WACC", f"{wacc_details['wacc']:.2f}%")
                 
