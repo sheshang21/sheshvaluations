@@ -12,39 +12,19 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Known Indian exchange suffixes — peers are returned bare by Yahoo and
-# suffix is re-applied by the caller (PHASE5). Strip these from results.
 _INDIAN_SUFFIXES = {'.NS', '.BO'}
-
-# Known suffixes Yahoo Finance uses in recommendedSymbols responses.
-# For non-Indian exchanges Yahoo typically returns the full ticker including suffix.
-_KNOWN_SUFFIXES = {
-    '.NS', '.BO',           # India
-    '.L',                   # LSE
-    '.SS', '.SZ',           # Shanghai / Shenzhen
-    '.HK',                  # HKEX
-    '.DE', '.F', '.XETRA',  # Germany
-    '.PA', '.AS', '.MI',    # Europe
-    '.TO', '.V',            # Canada
-    '.AX',                  # Australia
-    '.KS', '.KQ',           # Korea
-    '.T',                   # Japan
-    '.SW',                  # Switzerland
-}
 
 
 def _detect_suffix(ticker: str) -> str:
     """
-    Detect the exchange suffix from a ticker string.
-    Returns the suffix including the dot (e.g. '.NS', '.L', '.SS')
-    or '' for bare tickers (NASDAQ/NYSE).
+    Detect exchange suffix from ticker string.
+    Returns suffix with dot (e.g. '.NS', '.L', '.SS') or '' for bare tickers.
     """
     ticker = ticker.strip().upper()
     dot = ticker.rfind('.')
     if dot < 0:
         return ''
-    candidate = ticker[dot:]   # e.g. '.NS', '.L', '.SS'
-    # Accept any suffix that looks like a known one, or any short alphabetic suffix
+    candidate = ticker[dot:]
     if re.match(r'\.[A-Z]{1,5}$', candidate):
         return candidate
     return ''
@@ -53,81 +33,109 @@ def _detect_suffix(ticker: str) -> str:
 def get_peers_from_yahoo_comparison(ticker: str, max_peers: int = 20, exclude_self: bool = True):
     """
     Fetches peers via Yahoo Finance v6 recommendationsbysymbol API.
-    Works for all exchanges — NSE/BSE/LSE/SSE/HKEX/NASDAQ/NYSE/Other.
+    Works for all exchanges.
 
-    Returns:
-        List of peer tickers as bare base symbols (suffix stripped).
-        The caller (PHASE5) is responsible for re-appending the correct suffix.
+    Returns: List of bare base peer tickers (suffix stripped).
+             Caller is responsible for re-appending the correct suffix.
     """
     ticker_upper = ticker.strip().upper()
     suffix = _detect_suffix(ticker_upper)
     ticker_base = ticker_upper[:-len(suffix)] if suffix else ticker_upper
-    is_indian = suffix in _INDIAN_SUFFIXES
+    full_ticker = ticker_upper  # pass exactly as given — GEV, SHEL.L, RELIANCE.NS, 600519.SS
 
-    # For bare tickers (NASDAQ/NYSE) use as-is; for others use full ticker with suffix
-    full_ticker = ticker_upper  # already has suffix if any (e.g. SHEL.L, 600519.SS, RELIANCE.NS)
+    print(f"[PeerFetcher] Input: '{ticker}' → base='{ticker_base}' suffix='{suffix}' → API ticker='{full_ticker}'")
+
     peers = []
 
-    try:
-        url = f"https://query2.finance.yahoo.com/v6/finance/recommendationsbysymbol/{full_ticker}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
-        }
-
-        print(f"[PeerFetcher] Fetching: {url}")
-        response = requests.get(url, headers=headers, timeout=15)
-
-        if response.status_code != 200:
+    # ── Primary: v6 recommendationsbysymbol ──────────────────────────────
+    for host in ["query2.finance.yahoo.com", "query1.finance.yahoo.com"]:
+        try:
+            url = f"https://{host}/v6/finance/recommendationsbysymbol/{full_ticker}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                              '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+            }
+            print(f"[PeerFetcher] GET {url}")
+            response = requests.get(url, headers=headers, timeout=15)
             print(f"[PeerFetcher] HTTP {response.status_code}")
-            return []
 
-        data = response.json()
-        results = data.get('finance', {}).get('result', [])
+            if response.status_code != 200:
+                print(f"[PeerFetcher] Non-200 from {host}, trying next...")
+                continue
 
-        if not results:
-            print(f"[PeerFetcher] Empty result set from API")
-            return []
+            data = response.json()
+            print(f"[PeerFetcher] Raw JSON keys: {list(data.keys())}")
+            results = data.get('finance', {}).get('result', [])
+            print(f"[PeerFetcher] Result count: {len(results)}")
 
-        for rec in results:
-            for item in rec.get('recommendedSymbols', []):
-                symbol = item.get('symbol', '').strip()
-                if not symbol:
-                    continue
+            if not results:
+                print(f"[PeerFetcher] Empty result — full response: {str(data)[:500]}")
+                break  # got a 200 but empty — no point trying other host
 
-                # Strip the suffix to get base ticker — caller re-applies the right suffix.
-                # For Indian: strip .NS/.BO. For others: strip whatever suffix is present.
-                peer_suffix = _detect_suffix(symbol)
-                peer_base = symbol[:-len(peer_suffix)] if peer_suffix else symbol
+            for rec in results:
+                print(f"[PeerFetcher] rec keys: {list(rec.keys())}")
+                for item in rec.get('recommendedSymbols', []):
+                    symbol = item.get('symbol', '').strip()
+                    if not symbol:
+                        continue
+                    peer_suffix = _detect_suffix(symbol)
+                    peer_base = symbol[:-len(peer_suffix)] if peer_suffix else symbol
+                    if not peer_base:
+                        continue
+                    if exclude_self and peer_base == ticker_base:
+                        continue
+                    if peer_base not in peers:
+                        peers.append(peer_base)
+                        print(f"   Found: {peer_base} (raw: {symbol})")
+            break  # success — don't try other host
 
-                if not peer_base:
-                    continue
-                if exclude_self and peer_base == ticker_base:
-                    continue
-                if peer_base not in peers:
-                    peers.append(peer_base)
-                    print(f"   Found: {peer_base} (from {symbol})")
+        except Exception as e:
+            print(f"[PeerFetcher] Exception on {host}: {e}")
+            continue
 
-        result = peers[:max_peers]
+    # ── Fallback: v1 similar-securities ──────────────────────────────────
+    if not peers:
+        print(f"[PeerFetcher] v6 returned nothing — trying v1 similar-securities fallback...")
+        try:
+            url = f"https://query1.finance.yahoo.com/v1/finance/similarsecurities?symbol={full_ticker}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                              '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+            }
+            print(f"[PeerFetcher] Fallback GET {url}")
+            r = requests.get(url, headers=headers, timeout=15)
+            print(f"[PeerFetcher] Fallback HTTP {r.status_code}")
+            if r.status_code == 200:
+                data = r.json()
+                print(f"[PeerFetcher] Fallback raw: {str(data)[:500]}")
+                for item in data.get('finance', {}).get('result', [{}])[0].get('quotes', []):
+                    symbol = item.get('symbol', '').strip()
+                    if not symbol:
+                        continue
+                    peer_suffix = _detect_suffix(symbol)
+                    peer_base = symbol[:-len(peer_suffix)] if peer_suffix else symbol
+                    if peer_base and peer_base != ticker_base and peer_base not in peers:
+                        peers.append(peer_base)
+                        print(f"   Fallback found: {peer_base} (raw: {symbol})")
+        except Exception as e:
+            print(f"[PeerFetcher] Fallback exception: {e}")
 
-        if result:
-            print(f"\n[PeerFetcher] SUCCESS: Found {len(result)} peers for {full_ticker}")
-            print(f"Peers: {', '.join(result)}")
-            return result
-        else:
-            print(f"\n[PeerFetcher] No peers found")
-            return []
+    result = peers[:max_peers]
 
-    except Exception as e:
-        print(f"[PeerFetcher] Error: {e}")
-        return []
+    if result:
+        print(f"\n[PeerFetcher] SUCCESS: {len(result)} peers for {full_ticker}: {', '.join(result)}")
+    else:
+        print(f"\n[PeerFetcher] No peers found for {full_ticker}")
+
+    return result
 
 
 def get_industry_peers(ticker: str, max_peers: int = 20, exclude_self: bool = True):
     """
     Main entry point. Returns bare peer base tickers (no exchange suffix).
-    The caller is responsible for appending the correct exchange suffix.
+    Caller re-appends the correct exchange suffix.
     """
     ticker_upper = ticker.strip().upper()
 
@@ -139,17 +147,16 @@ def get_industry_peers(ticker: str, max_peers: int = 20, exclude_self: bool = Tr
 
     if peers:
         print(f"\n{'='*70}")
-        print(f"[PeerFetcher] FINAL RESULT: {len(peers)} peers found")
-        print(f"\nPeer List:")
+        print(f"[PeerFetcher] FINAL RESULT: {len(peers)} peers")
         for i, peer in enumerate(peers, 1):
             print(f"   {i:2d}. {peer}")
         print('='*70)
-        return peers
     else:
         print(f"\n{'='*70}")
         print(f"[PeerFetcher] FAILED: No peers found for {ticker_upper}")
         print("="*70)
-        return []
+
+    return peers
 
 
 # Alias for compatibility
@@ -158,13 +165,13 @@ get_industry_peers_fast = get_industry_peers
 
 if __name__ == "__main__":
     test_tickers = [
-        "TATASTEEL.NS",   # NSE India
-        "ADVAIT.BO",      # BSE India
-        "GEV",            # NYSE
-        "SHEL.L",         # LSE
-        "600519.SS",      # Shanghai
+        "TATASTEEL.NS",
+        "ADVAIT.BO",
+        "GEV",
+        "AAPL",
+        "SHEL.L",
+        "600519.SS",
     ]
-
     for ticker in test_tickers:
         peers = get_industry_peers(ticker, max_peers=10)
         print(f"\n{ticker}: {len(peers)} peers\n")
