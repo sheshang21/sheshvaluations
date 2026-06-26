@@ -6209,56 +6209,38 @@ def main():
                                 st.success(f"✅ Found {len(auto_peers)} potential peers")
 
                                 if _is_indian_exchange:
-                                    # For NSE/BSE: probe each peer to assign correct exchange
-                                    nse_list, bse_list = [], []
-                                    progress_bar = st.progress(0)
-                                    status_text = st.empty()
-                                    total = len(auto_peers)
-
-                                    for idx, peer in enumerate(auto_peers):
-                                        status_text.text(f"Checking {peer}... ({idx+1}/{total})")
-                                        progress_bar.progress((idx + 1) / total)
-                                        if idx > 0:
-                                            time.sleep(random.uniform(0.8, 1.5))
-
-                                        found_nse = False
-                                        try:
-                                            _t = get_cached_ticker(f"{peer}.NS")
-                                            _i = _t.info
-                                            if _i and any(k in _i for k in ['regularMarketPrice', 'currentPrice', 'previousClose']):
-                                                found_nse = True
-                                        except:
-                                            pass
-
-                                        if found_nse:
-                                            nse_list.append(peer)
-                                        else:
-                                            found_bse = False
-                                            try:
-                                                time.sleep(random.uniform(0.3, 0.6))
-                                                _t = get_cached_ticker(f"{peer}.BO")
-                                                _i = _t.info
-                                                if _i and any(k in _i for k in ['regularMarketPrice', 'currentPrice', 'previousClose']):
-                                                    found_bse = True
-                                            except:
-                                                pass
-                                            if found_bse:
-                                                bse_list.append(peer)
-                                            else:
-                                                nse_list.append(peer)  # default to NSE
-
-                                    progress_bar.empty()
-                                    status_text.empty()
-
-                                    # Write directly to widget keys → st.rerun() picks them up
-                                    st.session_state['nse_peers_listed'] = ",".join(nse_list)
-                                    st.session_state['bse_peers_listed'] = ",".join(bse_list)
+                                    # Same pattern as screener mode: dump all peers into the
+                                    # selected exchange box directly — no per-peer probing.
+                                    if exchange_suffix == "NS":
+                                        st.session_state['nse_peers_listed'] = ",".join(auto_peers)
+                                        st.session_state['bse_peers_listed'] = ""
+                                    else:  # BO
+                                        st.session_state['bse_peers_listed'] = ",".join(auto_peers)
+                                        st.session_state['nse_peers_listed'] = ""
                                     st.rerun()
-
                                 else:
-                                    # Worldwide mode: peers used as-is (bare tickers for NASDAQ/NYSE)
-                                    # Yahoo Finance peer fetcher returns bare tickers — keep them bare
-                                    st.session_state['worldwide_peers_listed'] = ",".join(auto_peers)
+                                    # Non-Indian exchange: append the correct suffix to bare peer tickers.
+                                    # NASDAQ/NYSE has no suffix (empty string) — peers stay bare.
+                                    # LSE has suffix "L" — append .L to each peer.
+                                    # SSE/HKEX and Other have empty suffix but user enters full ticker
+                                    # (e.g. 600519.SS, 0700.HK, SIE.DE) — detect suffix from input ticker.
+                                    if exchange_suffix:
+                                        # e.g. LSE → suffix "L" → "SHEL.L"
+                                        peer_suffix = f".{exchange_suffix}"
+                                    else:
+                                        # Detect from the user's ticker (e.g. "600519.SS" → ".SS")
+                                        _dot = full_ticker.rfind('.')
+                                        peer_suffix = full_ticker[_dot:] if _dot > 0 else ""
+
+                                    if peer_suffix:
+                                        formatted_peers = [
+                                            p if p.endswith(peer_suffix) else f"{p}{peer_suffix}"
+                                            for p in auto_peers
+                                        ]
+                                    else:
+                                        formatted_peers = auto_peers  # NASDAQ/NYSE bare tickers
+
+                                    st.session_state['worldwide_peers_listed'] = ",".join(formatted_peers)
                                     st.rerun()
                             else:
                                 st.warning("⚠️ No peers found for this ticker. Enter manually below.")
