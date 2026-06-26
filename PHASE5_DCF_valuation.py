@@ -6765,6 +6765,10 @@ def main():
                     st.rerun()
         
             if st.session_state.get('show_results_listed', False):
+                # Safe defaults — prevent UnboundLocalError if any branch doesn't assign these
+                current_price = 0
+                _ticker_csym = '₹'  # Will be overwritten once yahoo_data/info is available
+
                 # Determine data source based on checkbox
                 use_screener = st.session_state.get('use_screener_data', False)
             
@@ -6816,6 +6820,8 @@ def main():
                                 shares_source = 'Screener.in (EPS-based)'
                                 company_name = screener_data.get('company_name', ticker_clean)
                                 error = None
+                                # Set currency symbol now that yahoo_data is ready
+                                _ticker_csym = get_currency_symbol(yahoo_data.get('info'))
                             
                                 # BUGFIX: Validate shares from Screener and provide feedback
                                 if shares > 0:
@@ -6847,6 +6853,9 @@ def main():
                         shares_source = yahoo_data.get('shares_source', 'Unknown')
                         company_name = yahoo_data['info'].get('longName', ticker)
                         yahoo_data['_data_source'] = 'yahoo'
+                        # Set currency symbol and current price as soon as info is available
+                        _ticker_csym = get_currency_symbol(yahoo_data.get('info'))
+                        current_price = yahoo_data['info'].get('currentPrice', 0) or yahoo_data['info'].get('regularMarketPrice', 0) or 0
                     
                         # BUGFIX: Add validation and fallback for shares
                         if shares > 0:
@@ -6930,10 +6939,15 @@ def main():
                     # Use parameters set BEFORE Fetch button (from the expandable section)
                     # No need for Apply Changes button - parameters are already set!
                 
-                    # Get current price
+                    # Get current price (refresh from live data; fall back to value already fetched above)
                     stock = get_cached_ticker(get_ticker_with_exchange(ticker, exchange_suffix))
                     info = stock.info if stock else None
-                    current_price = info.get('currentPrice', 0) if info else 0
+                    _bank_price = info.get('currentPrice', 0) if info else 0
+                    if _bank_price > 0:
+                        current_price = _bank_price
+                    # _ticker_csym: update from live info if available, else keep value set earlier
+                    if info:
+                        _ticker_csym = get_currency_symbol(info)
                 
                     # Calculate Ke for bank valuations
                     wacc_details = calculate_wacc(financials, tax_rate, peer_tickers=None, manual_rf_rate=manual_rf_rate, manual_rm_rate=manual_rm_rate,
@@ -7654,7 +7668,11 @@ def main():
                     current_price = 0
 
                 # Derive currency symbol from Yahoo Finance info (e.g. $ for GEV/TSLA, ₹ for Indian stocks)
-                _ticker_csym = get_currency_symbol(info if 'info' in dir() else None)
+                # 'info' may have been set in the try block above; fall back gracefully
+                try:
+                    _ticker_csym = get_currency_symbol(info)
+                except Exception:
+                    _ticker_csym = get_currency_symbol(yahoo_data.get('info') if 'yahoo_data' in dir() else None)
 
                 # ================================
                 # ADDITIONAL VALUATION MODELS FOR NON-BANKING COMPANIES
